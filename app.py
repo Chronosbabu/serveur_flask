@@ -1,24 +1,15 @@
-from flask import Flask, request, jsonify
+from flask import Flask, render_template
+from flask_socketio import SocketIO, send
 
 app = Flask(__name__)
-messages = []
+app.config['SECRET_KEY'] = 'secret!'
+socketio = SocketIO(app)
 
-@app.route('/')
-def accueil():
-    return "Serveur Flask avec ID client fonctionne !"
-
-@app.route('/envoyer', methods=['POST'])
-def envoyer():
-    data = request.get_json()
-    if "client" in data and "message" in data:
-        messages.append(data)
-        return jsonify({"status": "Message reçu"}), 200
-    return jsonify({"error": "Données invalides"}), 400
-
-@app.route('/recevoir', methods=['GET'])
-def recevoir():
-    return jsonify(messages)
+@socketio.on('message')
+def handle_message(msg):
+    print('Message reçu:', msg)
+    send(msg, broadcast=True)  # renvoie le message à tous les clients connectés
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000)
+    socketio.run(app, host='0.0.0.0', port=5000)
 
