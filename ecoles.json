@@ -1,4 +1,5 @@
-[
-  {"id": "ecole1", "nom": "École Primaire A"},
-  {"id": "ecole2", "nom": "Collège B"}
-]
+{
+  "ecole1": "École Primaire A",
+  "ecole2": "Collège B"
+}
+
