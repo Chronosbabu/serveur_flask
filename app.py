@@ -49,7 +49,6 @@ def api():
         id_recu = data["id"].strip()
         if any(e["id"].strip() == id_recu for e in eleves):
             return "id_existe"
-
         eleves.append({
             "nom": data["nom"],
             "id": id_recu,
@@ -63,7 +62,6 @@ def api():
         ecole_trouvee = next((e for e in ecoles if e["id"].strip() == id_ecole_recu), None)
         if not ecole_trouvee:
             return jsonify({"status": "invalide"})
-
         nom_ecole = ecole_trouvee["nom"]
         eleves_ecole = [e for e in eleves if e["ecole"].strip() == id_ecole_recu]
         return jsonify({
@@ -73,17 +71,15 @@ def api():
         })
 
     elif type_requete == "connexion_parent":
-        id_parent = data["id"].strip()
-        eleve = next((e for e in eleves if e["id"].strip() == id_parent), None)
+        id_eleve = data["id"].strip()
+        eleve = next((e for e in eleves if e["id"].strip() == id_eleve), None)
         if not eleve:
             return jsonify({"status": "invalide"})
-
         with verrou:
             messages = charger_json(messages_file)
-            mess = [m for m in messages if m["id"].strip() == id_parent]
-            messages = [m for m in messages if m["id"].strip() != id_parent]
+            mess = [m for m in messages if m["id"].strip() == id_eleve]
+            messages = [m for m in messages if m["id"].strip() != id_eleve]
             sauvegarder_json(messages_file, messages)
-
         return jsonify({
             "status": "ok",
             "nom": eleve["nom"],
@@ -99,47 +95,35 @@ def api():
 
     return jsonify({"status": "type_invalide"})
 
-# Gestion WebSocket pour parent en temps réel
+# 🔄 WebSocket : connexion parent temps réel
 @socketio.on("connexion_parent_en_temps_reel")
 def gerer_parent_temps_reel(data):
-    id_parent = data.get("id", "").strip()
-    if not id_parent:
+    id_eleve = data.get("id", "").strip()
+    if not id_eleve:
         return
-
-    eleves = charger_json(eleves_file)
-    eleve = next((e for e in eleves if e["id"].strip() == id_parent), None)
-    if not eleve:
-        return
-
-    connexions_parents[id_parent] = request.sid
-    print(f"✅ Parent {id_parent} connecté en WebSocket")
+    connexions_parents[id_eleve] = request.sid
+    print(f"✅ Parent connecté pour élève : {id_eleve}")
 
 @socketio.on("disconnect")
-def deconnexion():
+def gerer_deconnexion():
     id_deco = None
-    for pid, sid in connexions_parents.items():
+    for eleve_id, sid in connexions_parents.items():
         if sid == request.sid:
-            id_deco = pid
+            id_deco = eleve_id
             break
     if id_deco:
         del connexions_parents[id_deco]
-        print(f"❌ Parent {id_deco} déconnecté")
+        print(f"❌ Déconnexion du parent de l'élève {id_deco}")
 
+# 📩 Réception d’un message pour un ou plusieurs enfants
 @socketio.on("envoyer_message")
 def envoyer_message(data):
-    liste_ids = []
-
-    if "ids" in data:
-        liste_ids = [i.strip() for i in data["ids"]]
-    elif "id" in data:
-        liste_ids = [data["id"].strip()]
-    elif "id_eleve" in data:
-        liste_ids = [data["id_eleve"].strip()]
-
+    ids = data.get("ids", []) or [data.get("id", ""), data.get("id_eleve", "")]
+    ids = [i.strip() for i in ids if i]
     texte = data.get("message", "")
     date_heure = datetime.now().isoformat()
 
-    for id_cible in liste_ids:
+    for id_cible in ids:
         message = {
             "id": id_cible,
             "message": texte,
@@ -155,7 +139,7 @@ def envoyer_message(data):
         if sid:
             try:
                 emit("nouveau_message", message, to=sid)
-                print(f"📨 Message temps réel envoyé à {id_cible}")
+                print(f"📨 Message envoyé à {id_cible}")
             except:
                 print(f"⚠️ Erreur d'envoi à {id_cible}, message stocké")
         else:
@@ -165,3 +149,4 @@ def envoyer_message(data):
 
 if __name__ == '__main__':
     socketio.run(app, host='0.0.0.0', port=10000)
+
