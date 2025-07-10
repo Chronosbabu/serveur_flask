@@ -26,7 +26,8 @@ def sauvegarder_json(fichier, data):
     with open(fichier, "w") as f:
         json.dump(data, f, indent=2)
 
-# Routes HTTP
+# --- ROUTES HTTP ---
+
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
     data = request.get_json()
@@ -69,7 +70,8 @@ def supprimer_eleve():
             sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
 
-# Accès public aux fichiers JSON (pour l'application parent)
+# --- FICHIERS JSON DISPONIBLES EN LECTURE POUR LES CLIENTS ---
+
 @app.route("/eleves.json")
 def get_eleves():
     return send_from_directory(".", "eleves.json")
@@ -78,7 +80,8 @@ def get_eleves():
 def get_messages():
     return send_from_directory(".", "messages.json")
 
-# WebSocket : réception de messages depuis les écoles
+# --- WEBSOCKET : réception de messages de l'école ---
+
 @socketio.on("envoyer_message")
 def envoyer_message(data):
     ecole_id = data["ecole_id"]
@@ -93,9 +96,19 @@ def envoyer_message(data):
             "contenu": message
         })
         sauvegarder_json(messages_file, messages)
-    emit("confirmation", {"statut": "envoyé"}, broadcast=True)
 
-# Lancement du serveur
+    # ✅ Diffusion aux parents (Flutter)
+    emit("confirmation", {"statut": "envoyé"}, broadcast=True)
+    emit("nouveau_message", {
+        "ecole_id": ecole_id,
+        "message": {
+            "eleves": eleves,
+            "contenu": message
+        }
+    }, broadcast=True)
+
+# --- LANCEMENT DU SERVEUR ---
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
