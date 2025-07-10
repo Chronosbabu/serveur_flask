@@ -1,5 +1,4 @@
-# server.py
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 import json
 import os
@@ -15,7 +14,7 @@ eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
 
-# Fonctions utilitaires
+# Initialisation des fichiers s'ils n'existent pas
 def charger_json(fichier):
     if not os.path.exists(fichier):
         with open(fichier, "w") as f:
@@ -70,7 +69,16 @@ def supprimer_eleve():
             sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
 
-# Événement WebSocket
+# Accès public aux fichiers JSON (pour l'application parent)
+@app.route("/eleves.json")
+def get_eleves():
+    return send_from_directory(".", "eleves.json")
+
+@app.route("/messages.json")
+def get_messages():
+    return send_from_directory(".", "messages.json")
+
+# WebSocket : réception de messages depuis les écoles
 @socketio.on("envoyer_message")
 def envoyer_message(data):
     ecole_id = data["ecole_id"]
@@ -87,7 +95,7 @@ def envoyer_message(data):
         sauvegarder_json(messages_file, messages)
     emit("confirmation", {"statut": "envoyé"}, broadcast=True)
 
-# Démarrage du serveur avec port dynamique
+# Lancement du serveur
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
