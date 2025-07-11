@@ -3,6 +3,7 @@ from flask_socketio import SocketIO, emit
 import json
 import os
 from threading import Lock
+from datetime import datetime
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -87,23 +88,29 @@ def envoyer_message(data):
     ecole_id = data["ecole_id"]
     eleves = data["eleves"]
     message = data["message"]
+    timestamp = datetime.now().isoformat()
+
     with verrou:
         messages = charger_json(messages_file)
         if ecole_id not in messages:
             messages[ecole_id] = []
         messages[ecole_id].append({
             "eleves": eleves,
-            "contenu": message
+            "contenu": message,
+            "timestamp": timestamp
         })
         sauvegarder_json(messages_file, messages)
 
-    # ✅ Diffusion aux parents (Flutter)
+    # Réponse à l’école
     emit("confirmation", {"statut": "envoyé"}, broadcast=True)
+
+    # Notification en temps réel pour les parents
     emit("nouveau_message", {
         "ecole_id": ecole_id,
         "message": {
             "eleves": eleves,
-            "contenu": message
+            "contenu": message,
+            "timestamp": timestamp
         }
     }, broadcast=True)
 
