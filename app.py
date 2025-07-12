@@ -4,18 +4,19 @@ import json
 import os
 from threading import Lock
 from datetime import datetime
+from supabase_client import supabase  # Import du client Supabase
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 verrou = Lock()
 
-# Fichiers JSON
+# Fichiers JSON pour les autres données
 eleves_file = "eleves.json"
 messages_file = "messages.json"
-ecoles_file = "ecoles.json"
+# ecoles_file n'est plus utilisé pour Supabase
 
-# Initialisation des fichiers s'ils n'existent pas
+# Fonctions JSON inchangées pour les autres routes
 def charger_json(fichier):
     if not os.path.exists(fichier):
         with open(fichier, "w") as f:
@@ -33,9 +34,9 @@ def sauvegarder_json(fichier, data):
 def verifier_ecole():
     data = request.get_json()
     ecole_id = data.get("id")
-    ecoles = charger_json(ecoles_file)
-    if ecole_id in ecoles:
-        return jsonify({"success": True, "nom": ecoles[ecole_id]})
+    result = supabase.table("ecoles").select("*").eq("id", ecole_id).execute()
+    if result.data:
+        return jsonify({"success": True, "nom": result.data[0]["nom"]})
     return jsonify({"success": False})
 
 @app.route("/ajouter_eleve", methods=["POST"])
