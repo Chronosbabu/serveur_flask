@@ -35,6 +35,7 @@ def verifier_ecole():
     data = request.get_json()
     ecole_id = data.get("id")
     result = supabase.table("ecoles").select("*").eq("id", ecole_id).execute()
+    print(f"ID reçu: {ecole_id}, résultat Supabase: {result.data}")  # DEBUG
     if result.data:
         return jsonify({"success": True, "nom": result.data[0]["nom"]})
     return jsonify({"success": False})
