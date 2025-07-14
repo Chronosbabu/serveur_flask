@@ -4,19 +4,18 @@ import json
 import os
 from threading import Lock
 from datetime import datetime
-from supabase_client import supabase  # Import du client Supabase
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 verrou = Lock()
 
-# Fichiers JSON pour les autres données
+# Fichiers JSON
 eleves_file = "eleves.json"
 messages_file = "messages.json"
-# ecoles_file n'est plus utilisé pour Supabase
+ecoles_file = "ecoles.json"
 
-# Fonctions JSON inchangées pour les autres routes
+# Initialisation des fichiers s'ils n'existent pas
 def charger_json(fichier):
     if not os.path.exists(fichier):
         with open(fichier, "w") as f:
@@ -33,26 +32,11 @@ def sauvegarder_json(fichier, data):
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
     data = request.get_json()
-    ecole_adresse = data.get("id")
-
-    if not ecole_adresse:
-        return jsonify({"success": False, "error": "ID manquant"}), 400
-
-    try:
-        ecole_adresse = int(ecole_adresse)
-    except ValueError:
-        return jsonify({"success": False, "error": "ID invalide"}), 400
-
-    try:
-        result = supabase.table("ecoles").select("*").eq("adresse", ecole_adresse).execute()
-        print(f"ID reçu: {ecole_adresse}, résultat Supabase: {result.data}")  # DEBUG
-
-        if result.data:
-            return jsonify({"success": True, "nom": result.data[0]["nom"]})
-        return jsonify({"success": False})
-    except Exception as e:
-        print("Erreur lors de la requête Supabase:", e)
-        return jsonify({"success": False, "error": "Erreur serveur interne"}), 500
+    ecole_id = data.get("id")
+    ecoles = charger_json(ecoles_file)
+    if ecole_id in ecoles:
+        return jsonify({"success": True, "nom": ecoles[ecole_id]})
+    return jsonify({"success": False})
 
 @app.route("/ajouter_eleve", methods=["POST"])
 def ajouter_eleve():
@@ -135,4 +119,6 @@ def envoyer_message(data):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
+
+
 
