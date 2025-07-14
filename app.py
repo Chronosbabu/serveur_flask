@@ -71,6 +71,19 @@ def supprimer_eleve():
             sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
 
+# Nouvelle route pour exporter toutes les données JSON (écoles, élèves, messages)
+@app.route("/exporter_jsons", methods=["GET"])
+def exporter_jsons():
+    with verrou:
+        ecoles = charger_json(ecoles_file)
+        eleves = charger_json(eleves_file)
+        messages = charger_json(messages_file)
+    return jsonify({
+        "ecoles": ecoles,
+        "eleves": eleves,
+        "messages": messages
+    })
+
 # --- FICHIERS JSON DISPONIBLES EN LECTURE POUR LES CLIENTS ---
 
 @app.route("/eleves.json")
@@ -119,6 +132,4 @@ def envoyer_message(data):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
-
-
 
