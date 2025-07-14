@@ -33,22 +33,26 @@ def sauvegarder_json(fichier, data):
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
     data = request.get_json()
-    ecole_id = data.get("id")
+    ecole_adresse = data.get("id")
 
-    if not ecole_id:
+    if not ecole_adresse:
         return jsonify({"success": False, "error": "ID manquant"}), 400
 
     try:
-        ecole_id = int(ecole_id)
+        ecole_adresse = int(ecole_adresse)
     except ValueError:
         return jsonify({"success": False, "error": "ID invalide"}), 400
 
-    result = supabase.table("ecoles").select("*").eq("identifiant", ecole_id).execute()
-    print(f"ID reçu: {ecole_id}, résultat Supabase: {result.data}")  # DEBUG
+    try:
+        result = supabase.table("ecoles").select("*").eq("adresse", ecole_adresse).execute()
+        print(f"ID reçu: {ecole_adresse}, résultat Supabase: {result.data}")  # DEBUG
 
-    if result.data:
-        return jsonify({"success": True, "nom": result.data[0]["nom"]})
-    return jsonify({"success": False})
+        if result.data:
+            return jsonify({"success": True, "nom": result.data[0]["nom"]})
+        return jsonify({"success": False})
+    except Exception as e:
+        print("Erreur lors de la requête Supabase:", e)
+        return jsonify({"success": False, "error": "Erreur serveur interne"}), 500
 
 @app.route("/ajouter_eleve", methods=["POST"])
 def ajouter_eleve():
