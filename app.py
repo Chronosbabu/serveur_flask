@@ -34,8 +34,18 @@ def sauvegarder_json(fichier, data):
 def verifier_ecole():
     data = request.get_json()
     ecole_id = data.get("id")
-    result = supabase.table("ecoles").select("*").eq("id", ecole_id).execute()
+
+    if not ecole_id:
+        return jsonify({"success": False, "error": "ID manquant"}), 400
+
+    try:
+        ecole_id = int(ecole_id)
+    except ValueError:
+        return jsonify({"success": False, "error": "ID invalide"}), 400
+
+    result = supabase.table("ecoles").select("*").eq("identifiant", ecole_id).execute()
     print(f"ID reçu: {ecole_id}, résultat Supabase: {result.data}")  # DEBUG
+
     if result.data:
         return jsonify({"success": True, "nom": result.data[0]["nom"]})
     return jsonify({"success": False})
