@@ -4,18 +4,26 @@ import json
 import os
 from threading import Lock
 from datetime import datetime
+import firebase_admin
+from firebase_admin import credentials, messaging
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 verrou = Lock()
 
+# Initialiser Firebase Admin SDK
+cred = credentials.Certificate("firebase-key.json")  # Ton fichier JSON Firebase
+firebase_admin.initialize_app(cred)
+
 # Fichiers JSON
 eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
+tokens_file = "tokens.json"
 
-# Initialisation des fichiers s'ils n'existent pas
+# --- Fonctions utilitaires JSON ---
+
 def charger_json(fichier):
     if not os.path.exists(fichier):
         with open(fichier, "w") as f:
@@ -27,7 +35,51 @@ def sauvegarder_json(fichier, data):
     with open(fichier, "w") as f:
         json.dump(data, f, indent=2)
 
-# --- ROUTES HTTP ---
+# --- Gestion tokens FCM ---
+
+def charger_tokens():
+    return charger_json(tokens_file)
+
+def sauvegarder_tokens(data):
+    sauvegarder_json(tokens_file, data)
+
+@app.route("/register_token", methods=["POST"])
+def register_token():
+    data = request.get_json()
+    token = data.get("token")
+    parent_id = data.get("parent_id", "")
+
+    if not token:
+        return jsonify({"success": False, "error": "Token manquant"}), 400
+
+    with verrou:
+        tokens = charger_tokens()
+        tokens[token] = parent_id
+        sauvegarder_tokens(tokens)
+
+    return jsonify({"success": True})
+
+def envoyer_notification(token, titre, corps):
+    try:
+        message = messaging.Message(
+            notification=messaging.Notification(
+                title=titre,
+                body=corps,
+            ),
+            token=token
+        )
+        response = messaging.send(message)
+        print("✅ Notification envoyée :", response)
+    except Exception as e:
+        print("❌ Erreur notification :", e)
+
+def notifier_parents(titre, corps):
+    with verrou:
+        tokens = charger_tokens()
+        for token in tokens.keys():
+            envoyer_notification(token, titre, corps)
+
+# --- Routes HTTP ---
 
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
@@ -71,7 +123,6 @@ def supprimer_eleve():
             sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
 
-# Nouvelle route pour exporter toutes les données JSON (écoles, élèves, messages)
 @app.route("/exporter_jsons", methods=["GET"])
 def exporter_jsons():
     with verrou:
@@ -84,8 +135,6 @@ def exporter_jsons():
         "messages": messages
     })
 
-# --- FICHIERS JSON DISPONIBLES EN LECTURE POUR LES CLIENTS ---
-
 @app.route("/eleves.json")
 def get_eleves():
     return send_from_directory(".", "eleves.json")
@@ -94,7 +143,7 @@ def get_eleves():
 def get_messages():
     return send_from_directory(".", "messages.json")
 
-# --- WEBSOCKET : réception de messages de l'école ---
+# --- WebSocket ---
 
 @socketio.on("envoyer_message")
 def envoyer_message(data):
@@ -114,10 +163,8 @@ def envoyer_message(data):
         })
         sauvegarder_json(messages_file, messages)
 
-    # Réponse à l’école
     emit("confirmation", {"statut": "envoyé"}, broadcast=True)
 
-    # Notification en temps réel pour les parents
     emit("nouveau_message", {
         "ecole_id": ecole_id,
         "message": {
@@ -127,9 +174,13 @@ def envoyer_message(data):
         }
     }, broadcast=True)
 
-# --- LANCEMENT DU SERVEUR ---
+    # Notification Push
+    titre = f"Nouveau message de l'école {ecole_id}"
+    corps = message
+    notifier_parents(titre, corps)
+
+# --- Lancement serveur ---
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
-
