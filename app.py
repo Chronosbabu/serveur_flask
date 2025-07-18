@@ -12,8 +12,11 @@ app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 verrou = Lock()
 
-# Initialiser Firebase Admin SDK
-cred = credentials.Certificate("firebase-key.json")  # Ton fichier JSON Firebase
+# --- Initialiser Firebase Admin SDK avec variable d'environnement ---
+firebase_key_json = os.environ.get('FIREBASE_KEY')
+if not firebase_key_json:
+    raise Exception("La variable d'environnement FIREBASE_KEY est manquante")
+cred = credentials.Certificate(json.loads(firebase_key_json))
 firebase_admin.initialize_app(cred)
 
 # Fichiers JSON
@@ -26,14 +29,14 @@ tokens_file = "tokens.json"
 
 def charger_json(fichier):
     if not os.path.exists(fichier):
-        with open(fichier, "w") as f:
+        with open(fichier, "w", encoding="utf-8") as f:
             json.dump({}, f)
-    with open(fichier, "r") as f:
+    with open(fichier, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def sauvegarder_json(fichier, data):
-    with open(fichier, "w") as f:
-        json.dump(data, f, indent=2)
+    with open(fichier, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 # --- Gestion tokens FCM ---
 
@@ -184,3 +187,4 @@ def envoyer_message(data):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
+
