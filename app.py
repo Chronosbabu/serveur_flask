@@ -12,21 +12,20 @@ app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 verrou = Lock()
 
-# --- Initialiser Firebase Admin SDK avec variable d'environnement ---
+# Initialiser Firebase Admin
 firebase_key_json = os.environ.get('FIREBASE_KEY')
 if not firebase_key_json:
     raise Exception("La variable d'environnement FIREBASE_KEY est manquante")
 cred = credentials.Certificate(json.loads(firebase_key_json))
 firebase_admin.initialize_app(cred)
 
-# Fichiers JSON
+# Fichiers
 eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
 tokens_file = "tokens.json"
 
-# --- Fonctions utilitaires JSON ---
-
+# Fonctions JSON
 def charger_json(fichier):
     if not os.path.exists(fichier):
         with open(fichier, "w", encoding="utf-8") as f:
@@ -38,8 +37,7 @@ def sauvegarder_json(fichier, data):
     with open(fichier, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# --- Gestion tokens FCM ---
-
+# Tokens
 def charger_tokens():
     return charger_json(tokens_file)
 
@@ -51,15 +49,12 @@ def register_token():
     data = request.get_json()
     token = data.get("token")
     parent_id = data.get("parent_id", "")
-
     if not token:
         return jsonify({"success": False, "error": "Token manquant"}), 400
-
     with verrou:
         tokens = charger_tokens()
         tokens[token] = parent_id
         sauvegarder_tokens(tokens)
-
     return jsonify({"success": True})
 
 def envoyer_notification(token, titre, corps):
@@ -82,8 +77,7 @@ def notifier_parents(titre, corps):
         for token in tokens.keys():
             envoyer_notification(token, titre, corps)
 
-# --- Routes HTTP ---
-
+# Routes
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
     data = request.get_json()
@@ -146,8 +140,7 @@ def get_eleves():
 def get_messages():
     return send_from_directory(".", "messages.json")
 
-# --- WebSocket ---
-
+# WebSocket
 @socketio.on("envoyer_message")
 def envoyer_message(data):
     ecole_id = data["ecole_id"]
@@ -177,14 +170,15 @@ def envoyer_message(data):
         }
     }, broadcast=True)
 
-    # Notification Push
-    titre = f"Nouveau message de l'école {ecole_id}"
-    corps = message
+    # 🔴 Ici on récupère le nom de l’école
+    ecoles = charger_json(ecoles_file)
+    nom_ecole = ecoles.get(ecole_id, ecole_id)
+
+    titre = f"Nouveau message de l'école"
+    corps = nom_ecole  # 👈 Nom visible dans la notif
     notifier_parents(titre, corps)
 
-# --- Lancement serveur ---
-
+# Lancer serveur
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
-
