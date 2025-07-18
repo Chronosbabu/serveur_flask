@@ -3,6 +3,8 @@ flask-socketio
 python-socketio
 eventlet
 gunicorn
+firebase-admin
+
 
 
 
