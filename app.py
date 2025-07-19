@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory 
 from flask_socketio import SocketIO, emit
 import json
 import os
@@ -12,14 +12,14 @@ app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 verrou = Lock()
 
-# Initialiser Firebase Admin avec la variable FIREBASE_KEY
+# Initialiser Firebase Admin
 firebase_key_json = os.environ.get('FIREBASE_KEY')
 if not firebase_key_json:
     raise Exception("La variable d'environnement FIREBASE_KEY est manquante")
 cred = credentials.Certificate(json.loads(firebase_key_json))
 firebase_admin.initialize_app(cred)
 
-# Fichiers JSON
+# Fichiers
 eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
@@ -37,7 +37,7 @@ def sauvegarder_json(fichier, data):
     with open(fichier, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# Gestion des tokens
+# Tokens
 def charger_tokens():
     return charger_json(tokens_file)
 
@@ -57,31 +57,27 @@ def register_token():
         sauvegarder_tokens(tokens)
     return jsonify({"success": True})
 
-# ✅ Fonction pour envoyer une notification push (correctement configurée)
 def envoyer_notification(token, titre, corps):
     try:
         message = messaging.Message(
+            notification=messaging.Notification(title=titre, body=corps),
             token=token,
             android=messaging.AndroidConfig(
                 priority='high',
                 notification=messaging.AndroidNotification(
-                    title=titre,
-                    body=corps,
+                    channel_id='default_channel',
                     sound='default',
-                ),
+                    click_action='FLUTTER_NOTIFICATION_CLICK'
+                )
             ),
             apns=messaging.APNSConfig(
                 headers={'apns-priority': '10'},
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
-                        alert={'title': titre, 'body': corps},
-                        sound='default'
+                        sound='default',
+                        category='NEW_MESSAGE_CATEGORY'
                     )
                 )
-            ),
-            notification=messaging.Notification(
-                title=titre,
-                body=corps
             )
         )
         response = messaging.send(message)
@@ -89,15 +85,13 @@ def envoyer_notification(token, titre, corps):
     except Exception as e:
         print("❌ Erreur notification :", e)
 
-# ✅ Notifier uniquement les parents concernés
-def notifier_parents(eleves_cibles, titre, corps):
+def notifier_parents(titre, corps):
     with verrou:
         tokens = charger_tokens()
-        for token, parent_id in tokens.items():
-            if parent_id in eleves_cibles:
-                envoyer_notification(token, titre, corps)
+        for token in tokens.keys():
+            envoyer_notification(token, titre, corps)
 
-# ========================= ROUTES FLASK =========================
+# ========== ROUTES FLASK ==========
 
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
@@ -168,7 +162,7 @@ def get_eleves():
 def get_messages():
     return send_from_directory(".", "messages.json")
 
-# ========================= SOCKET.IO =========================
+# ========== SOCKET.IO ==========
 
 @socketio.on("envoyer_message")
 def envoyer_message(data):
@@ -198,11 +192,10 @@ def envoyer_message(data):
         }
     }, broadcast=True)
 
-    # ✅ Envoyer une vraie notification push
     nom_ecole = charger_json(ecoles_file).get(ecole_id, ecole_id)
-    notifier_parents(eleves, "Nouveau message de l'école", nom_ecole)
+    notifier_parents("Nouveau message de l'école", nom_ecole)
 
-# ========================= LANCEMENT =========================
+# ========== LANCEMENT SERVEUR ==========
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
