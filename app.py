@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory 
+from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 import json
 import os
@@ -12,14 +12,14 @@ app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 verrou = Lock()
 
-# Initialiser Firebase Admin
-firebase_key_json = os.environ.get('FIREBASE_KEY')
+# Initialiser Firebase Admin avec la bonne variable d'environnement
+firebase_key_json = os.environ.get('FIREBASE_KEY_PARENT')
 if not firebase_key_json:
-    raise Exception("La variable d'environnement FIREBASE_KEY est manquante")
+    raise Exception("La variable d'environnement FIREBASE_KEY_PARENT est manquante")
 cred = credentials.Certificate(json.loads(firebase_key_json))
 firebase_admin.initialize_app(cred)
 
-# Fichiers
+# Fichiers JSON
 eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
@@ -37,7 +37,7 @@ def sauvegarder_json(fichier, data):
     with open(fichier, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# Tokens
+# Gestion des tokens
 def charger_tokens():
     return charger_json(tokens_file)
 
@@ -91,7 +91,7 @@ def notifier_parents(titre, corps):
         for token in tokens.keys():
             envoyer_notification(token, titre, corps)
 
-# ========== ROUTES FLASK ==========
+# Routes Flask
 
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
@@ -162,7 +162,7 @@ def get_eleves():
 def get_messages():
     return send_from_directory(".", "messages.json")
 
-# ========== SOCKET.IO ==========
+# Socket.IO
 
 @socketio.on("envoyer_message")
 def envoyer_message(data):
@@ -195,9 +195,8 @@ def envoyer_message(data):
     nom_ecole = charger_json(ecoles_file).get(ecole_id, ecole_id)
     notifier_parents("Nouveau message de l'école", nom_ecole)
 
-# ========== LANCEMENT SERVEUR ==========
+# Lancement serveur
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
-
