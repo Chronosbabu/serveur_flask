@@ -57,30 +57,27 @@ def register_token():
         sauvegarder_tokens(tokens)
     return jsonify({"success": True})
 
-# ✅ Envoi de notification FCM avec priorité haute
 def envoyer_notification(token, titre, corps):
     try:
         message = messaging.Message(
-            notification=messaging.Notification(title=titre, body=corps),
-            token=token,
-            android=messaging.AndroidConfig(priority='high'),
-            apns=messaging.APNSConfig(headers={'apns-priority': '10'}),
+            notification=messaging.Notification(
+                title=titre,
+                body=corps,
+            ),
+            token=token
         )
         response = messaging.send(message)
         print("✅ Notification envoyée :", response)
     except Exception as e:
         print("❌ Erreur notification :", e)
 
-# ✅ Notifier uniquement les parents concernés
-def notifier_parents(eleves_cibles, titre, corps):
+def notifier_parents(titre, corps):
     with verrou:
         tokens = charger_tokens()
-        for token, parent_id in tokens.items():
-            if parent_id in eleves_cibles:
-                envoyer_notification(token, titre, corps)
+        for token in tokens.keys():
+            envoyer_notification(token, titre, corps)
 
-# ========== ROUTES FLASK ==========
-
+# Routes
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
     data = request.get_json()
@@ -123,24 +120,17 @@ def supprimer_eleve():
             sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
 
-@app.route("/supprimer_message", methods=["POST"])
-def supprimer_message():
-    data = request.get_json()
-    ecole_id = data.get("ecole_id")
-    timestamp = data.get("timestamp")
-    if not ecole_id or not timestamp:
-        return jsonify({"success": False, "error": "Paramètres manquants"}), 400
+@app.route("/exporter_jsons", methods=["GET"])
+def exporter_jsons():
     with verrou:
+        ecoles = charger_json(ecoles_file)
+        eleves = charger_json(eleves_file)
         messages = charger_json(messages_file)
-        if ecole_id in messages:
-            avant = len(messages[ecole_id])
-            messages[ecole_id] = [m for m in messages[ecole_id] if m.get("timestamp") != timestamp]
-            sauvegarder_json(messages_file, messages)
-            if len(messages[ecole_id]) == avant - 1:
-                return jsonify({"success": True})
-            else:
-                return jsonify({"success": False, "error": "Message non trouvé"}), 404
-        return jsonify({"success": False, "error": "École non trouvée"}), 404
+    return jsonify({
+        "ecoles": ecoles,
+        "eleves": eleves,
+        "messages": messages
+    })
 
 @app.route("/eleves.json")
 def get_eleves():
@@ -150,8 +140,7 @@ def get_eleves():
 def get_messages():
     return send_from_directory(".", "messages.json")
 
-# ========== SOCKET.IO ==========
-
+# WebSocket
 @socketio.on("envoyer_message")
 def envoyer_message(data):
     ecole_id = data["ecole_id"]
@@ -171,6 +160,7 @@ def envoyer_message(data):
         sauvegarder_json(messages_file, messages)
 
     emit("confirmation", {"statut": "envoyé"}, broadcast=True)
+
     emit("nouveau_message", {
         "ecole_id": ecole_id,
         "message": {
@@ -180,12 +170,15 @@ def envoyer_message(data):
         }
     }, broadcast=True)
 
-    # ✅ Notification ciblée
-    nom_ecole = charger_json(ecoles_file).get(ecole_id, ecole_id)
-    notifier_parents(eleves, "Nouveau message de l'école", nom_ecole)
+    # 🔴 Ici on récupère le nom de l’école
+    ecoles = charger_json(ecoles_file)
+    nom_ecole = ecoles.get(ecole_id, ecole_id)
 
-# ========== LANCEMENT SERVEUR ==========
+    titre = f"Nouveau message de l'école"
+    corps = nom_ecole  # 👈 Nom visible dans la notif
+    notifier_parents(titre, corps)
 
+# Lancer serveur
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
