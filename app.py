@@ -60,7 +60,7 @@ def ajouter_eleve():
             eleves[ecole_id] = {}
         eleves[ecole_id][eleve_id] = {
             "nom": nom,
-            "telegram_id": None  # tu peux gérer ici si tu veux associer un telegram_id plus tard
+            "telegram_id": None  # Peut être mis à jour via webhook Telegram
         }
         sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
@@ -160,11 +160,10 @@ def telegram_webhook():
         texte = data["message"].get("text", "").strip()
 
         eleves = charger_json(eleves_file)
-        # Chercher l'élève dont l'ID correspond au texte envoyé
         trouve = False
         for ecole_id, eleves_ecole in eleves.items():
             if texte in eleves_ecole:
-                # Associer le telegram_id pour ce parent (chat_id)
+                # Met à jour telegram_id, structure déjà dict donc pas d'erreur
                 eleves_ecole[texte]["telegram_id"] = chat_id
                 sauvegarder_json(eleves_file, eleves)
                 envoyer_message_telegram(chat_id, f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({ecole_id})")
