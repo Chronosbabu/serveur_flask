@@ -14,36 +14,43 @@ verrou = Lock()
 BOT_TOKEN = "8251629643:AAH1K4X-bjNQUOk_ym5p4BLVWLh3Ad6NF8M"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# Fichiers JSON
 eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
 
-# Fonctions JSON
 def charger_json(fichier):
     if not os.path.exists(fichier):
         with open(fichier, "w", encoding="utf-8") as f:
             json.dump({}, f)
-    with open(fichier, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(fichier, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Erreur chargement {fichier}: {e}")
+        return {}
 
 def sauvegarder_json(fichier, data):
-    with open(fichier, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    try:
+        with open(fichier, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Erreur sauvegarde {fichier}: {e}")
 
-# Envoi message Telegram
 def envoyer_message_telegram(chat_id, texte):
-    requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
-        "chat_id": chat_id,
-        "text": texte
-    })
+    try:
+        requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
+            "chat_id": chat_id,
+            "text": texte
+        })
+    except Exception as e:
+        print(f"Erreur envoi Telegram à {chat_id}: {e}")
 
-# Routes Flask classiques
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
     data = request.get_json()
     ecole_id = data.get("id")
     ecoles = charger_json(ecoles_file)
+    print(f"verifier_ecole: id={ecole_id}")
     if ecole_id in ecoles:
         return jsonify({"success": True, "nom": ecoles[ecole_id]})
     return jsonify({"success": False})
@@ -54,10 +61,12 @@ def ajouter_eleve():
     ecole_id = data["ecole_id"]
     eleve_id = data["eleve_id"]
     nom = data["nom"]
+    print(f"ajouter_eleve: école={ecole_id}, élève={eleve_id} ({nom})")
     with verrou:
         eleves = charger_json(eleves_file)
         if ecole_id not in eleves:
             eleves[ecole_id] = {}
+        # Toujours stocker dict
         eleves[ecole_id][eleve_id] = {
             "nom": nom,
             "telegram_id": None
@@ -69,14 +78,31 @@ def ajouter_eleve():
 def liste_eleves():
     data = request.get_json()
     ecole_id = data.get("ecole_id")
+    print(f"liste_eleves: demande pour école {ecole_id}")
     eleves = charger_json(eleves_file)
-    return jsonify(eleves.get(ecole_id, {}))
+    if ecole_id not in eleves:
+        print(f"liste_eleves: école {ecole_id} non trouvée")
+        return jsonify({})
+    # Assurer que chaque élève est un dict (convertir les anciens formats string)
+    corrected = {}
+    for eid, val in eleves[ecole_id].items():
+        if isinstance(val, str):
+            corrected[eid] = {"nom": val, "telegram_id": None}
+        else:
+            corrected[eid] = val
+    # Remettre à jour fichier si besoin
+    if corrected != eleves[ecole_id]:
+        eleves[ecole_id] = corrected
+        with verrou:
+            sauvegarder_json(eleves_file, eleves)
+    return jsonify(corrected)
 
 @app.route("/supprimer_eleve", methods=["POST"])
 def supprimer_eleve():
     data = request.get_json()
     ecole_id = data["ecole_id"]
     eleve_id = data["eleve_id"]
+    print(f"supprimer_eleve: école={ecole_id}, élève={eleve_id}")
     with verrou:
         eleves = charger_json(eleves_file)
         if ecole_id in eleves and eleve_id in eleves[ecole_id]:
@@ -105,19 +131,21 @@ def supprimer_message():
 
 @app.route("/eleves.json")
 def get_eleves():
+    print("Serve eleves.json")
     return send_from_directory(".", "eleves.json")
 
 @app.route("/messages.json")
 def get_messages():
+    print("Serve messages.json")
     return send_from_directory(".", "messages.json")
 
-# Socket.IO pour envoyer message aux élèves
 @socketio.on("envoyer_message")
 def envoyer_message(data):
     ecole_id = data["ecole_id"]
     eleves = data["eleves"]
     message = data["message"]
     timestamp = datetime.now().isoformat()
+    print(f"envoyer_message: école={ecole_id}, message='{message}' aux élèves={eleves}")
 
     with verrou:
         messages = charger_json(messages_file)
@@ -140,7 +168,6 @@ def envoyer_message(data):
         }
     }, broadcast=True)
 
-    # Envoi Telegram pour chaque élève avec telegram_id défini
     eleves_data = charger_json(eleves_file)
     for eleve_id in eleves:
         eleve_info = None
@@ -151,7 +178,6 @@ def envoyer_message(data):
         if eleve_info and eleve_info.get("telegram_id"):
             envoyer_message_telegram(eleve_info["telegram_id"], f"Message pour {eleve_info['nom']}: {message}")
 
-# Webhook Telegram pour recevoir les messages des parents
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
     data = request.json
@@ -163,7 +189,6 @@ def telegram_webhook():
         trouve = False
         for ecole_id, eleves_ecole in eleves.items():
             if texte in eleves_ecole:
-                # Si la valeur est une string, convertir en dict avant mise à jour
                 if isinstance(eleves_ecole[texte], str):
                     eleves_ecole[texte] = {
                         "nom": eleves_ecole[texte],
