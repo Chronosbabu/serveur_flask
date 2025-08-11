@@ -4,26 +4,20 @@ import json
 import os
 from threading import Lock
 from datetime import datetime
-import firebase_admin
-from firebase_admin import credentials, messaging
+import requests
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
 socketio = SocketIO(app, cors_allowed_origins="*")
 verrou = Lock()
 
-# Initialiser Firebase Admin avec la bonne variable d'environnement
-firebase_key_json = os.environ.get('FIREBASE_KEY_PARENT')
-if not firebase_key_json:
-    raise Exception("La variable d'environnement FIREBASE_KEY_PARENT est manquante")
-cred = credentials.Certificate(json.loads(firebase_key_json))
-firebase_admin.initialize_app(cred)
+BOT_TOKEN = "8251629643:AAH1K4X-bjNQUOk_ym5p4BLVWLh3Ad6NF8M"
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # Fichiers JSON
 eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
-tokens_file = "tokens.json"
 
 # Fonctions JSON
 def charger_json(fichier):
@@ -37,62 +31,14 @@ def sauvegarder_json(fichier, data):
     with open(fichier, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-# Gestion des tokens
-def charger_tokens():
-    return charger_json(tokens_file)
+# Envoi message Telegram
+def envoyer_message_telegram(chat_id, texte):
+    requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": texte
+    })
 
-def sauvegarder_tokens(data):
-    sauvegarder_json(tokens_file, data)
-
-@app.route("/register_token", methods=["POST"])
-def register_token():
-    data = request.get_json()
-    token = data.get("token")
-    parent_id = data.get("parent_id", "")
-    if not token:
-        return jsonify({"success": False, "error": "Token manquant"}), 400
-    with verrou:
-        tokens = charger_tokens()
-        tokens[token] = parent_id
-        sauvegarder_tokens(tokens)
-    return jsonify({"success": True})
-
-def envoyer_notification(token, titre, corps):
-    try:
-        message = messaging.Message(
-            notification=messaging.Notification(title=titre, body=corps),
-            token=token,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    channel_id='default_channel',
-                    sound='default',
-                    click_action='FLUTTER_NOTIFICATION_CLICK'
-                )
-            ),
-            apns=messaging.APNSConfig(
-                headers={'apns-priority': '10'},
-                payload=messaging.APNSPayload(
-                    aps=messaging.Aps(
-                        sound='default',
-                        category='NEW_MESSAGE_CATEGORY'
-                    )
-                )
-            )
-        )
-        response = messaging.send(message)
-        print("✅ Notification envoyée :", response)
-    except Exception as e:
-        print("❌ Erreur notification :", e)
-
-def notifier_parents(titre, corps):
-    with verrou:
-        tokens = charger_tokens()
-        for token in tokens.keys():
-            envoyer_notification(token, titre, corps)
-
-# Routes Flask
-
+# Routes Flask classiques (ta logique existante)
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
     data = request.get_json()
@@ -112,7 +58,10 @@ def ajouter_eleve():
         eleves = charger_json(eleves_file)
         if ecole_id not in eleves:
             eleves[ecole_id] = {}
-        eleves[ecole_id][eleve_id] = nom
+        eleves[ecole_id][eleve_id] = {
+            "nom": nom,
+            "telegram_id": None  # tu peux gérer ici si tu veux associer un telegram_id plus tard
+        }
         sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
 
@@ -162,8 +111,7 @@ def get_eleves():
 def get_messages():
     return send_from_directory(".", "messages.json")
 
-# Socket.IO
-
+# Socket.IO pour envoyer message aux élèves
 @socketio.on("envoyer_message")
 def envoyer_message(data):
     ecole_id = data["ecole_id"]
@@ -192,11 +140,42 @@ def envoyer_message(data):
         }
     }, broadcast=True)
 
-    nom_ecole = charger_json(ecoles_file).get(ecole_id, ecole_id)
-    notifier_parents("Nouveau message de l'école", nom_ecole)
+    # Envoi Telegram pour chaque élève avec telegram_id défini
+    eleves_data = charger_json(eleves_file)
+    for eleve_id in eleves:
+        eleve_info = None
+        for ec_id, e_dict in eleves_data.items():
+            if eleve_id in e_dict:
+                eleve_info = e_dict[eleve_id]
+                break
+        if eleve_info and eleve_info.get("telegram_id"):
+            envoyer_message_telegram(eleve_info["telegram_id"], f"Message pour {eleve_info['nom']}: {message}")
 
-# Lancement serveur
+# Webhook Telegram pour recevoir les messages des parents
+@app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
+def telegram_webhook():
+    data = request.json
+    if "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        texte = data["message"].get("text", "").strip()
+
+        eleves = charger_json(eleves_file)
+        # Chercher l'élève dont l'ID correspond au texte envoyé
+        trouve = False
+        for ecole_id, eleves_ecole in eleves.items():
+            if texte in eleves_ecole:
+                # Associer le telegram_id pour ce parent (chat_id)
+                eleves_ecole[texte]["telegram_id"] = chat_id
+                sauvegarder_json(eleves_file, eleves)
+                envoyer_message_telegram(chat_id, f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({ecole_id})")
+                trouve = True
+                break
+        if not trouve:
+            envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.")
+
+    return jsonify({"ok": True})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
+
