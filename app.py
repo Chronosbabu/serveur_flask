@@ -38,7 +38,7 @@ def envoyer_message_telegram(chat_id, texte):
         "text": texte
     })
 
-# Routes Flask classiques (ta logique existante)
+# Routes Flask classiques
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
     data = request.get_json()
@@ -60,7 +60,7 @@ def ajouter_eleve():
             eleves[ecole_id] = {}
         eleves[ecole_id][eleve_id] = {
             "nom": nom,
-            "telegram_id": None  # Peut être mis à jour via webhook Telegram
+            "telegram_id": None
         }
         sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
@@ -163,8 +163,15 @@ def telegram_webhook():
         trouve = False
         for ecole_id, eleves_ecole in eleves.items():
             if texte in eleves_ecole:
-                # Met à jour telegram_id, structure déjà dict donc pas d'erreur
-                eleves_ecole[texte]["telegram_id"] = chat_id
+                # Si la valeur est une string, convertir en dict avant mise à jour
+                if isinstance(eleves_ecole[texte], str):
+                    eleves_ecole[texte] = {
+                        "nom": eleves_ecole[texte],
+                        "telegram_id": chat_id
+                    }
+                else:
+                    eleves_ecole[texte]["telegram_id"] = chat_id
+
                 sauvegarder_json(eleves_file, eleves)
                 envoyer_message_telegram(chat_id, f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({ecole_id})")
                 trouve = True
