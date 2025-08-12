@@ -36,6 +36,14 @@ def sauvegarder_json(fichier, data):
     except Exception as e:
         print(f"Erreur sauvegarde {fichier}: {e}")
 
+def set_telegram_webhook():
+    url_webhook = f"https://ton_domaine_ou_ip/{BOT_TOKEN}"
+    try:
+        resp = requests.get(f"{TELEGRAM_API_URL}/setWebhook", params={"url": url_webhook})
+        print("Webhook Telegram set:", resp.json())
+    except Exception as e:
+        print("Erreur setWebhook Telegram:", e)
+
 def envoyer_message_telegram(chat_id, texte):
     try:
         requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
@@ -66,10 +74,14 @@ def ajouter_eleve():
         eleves = charger_json(eleves_file)
         if ecole_id not in eleves:
             eleves[ecole_id] = {}
-        # Toujours stocker dict
+        # Si élève existe, garder telegram_id existant
+        if eleve_id in eleves[ecole_id]:
+            telegram_id = eleves[ecole_id][eleve_id].get("telegram_id")
+        else:
+            telegram_id = None
         eleves[ecole_id][eleve_id] = {
             "nom": nom,
-            "telegram_id": None
+            "telegram_id": telegram_id
         }
         sauvegarder_json(eleves_file, eleves)
     return jsonify({"success": True})
@@ -83,14 +95,12 @@ def liste_eleves():
     if ecole_id not in eleves:
         print(f"liste_eleves: école {ecole_id} non trouvée")
         return jsonify({})
-    # Assurer que chaque élève est un dict (convertir les anciens formats string)
     corrected = {}
     for eid, val in eleves[ecole_id].items():
         if isinstance(val, str):
             corrected[eid] = {"nom": val, "telegram_id": None}
         else:
             corrected[eid] = val
-    # Remettre à jour fichier si besoin
     if corrected != eleves[ecole_id]:
         eleves[ecole_id] = corrected
         with verrou:
@@ -195,7 +205,9 @@ def telegram_webhook():
                         "telegram_id": chat_id
                     }
                 else:
-                    eleves_ecole[texte]["telegram_id"] = chat_id
+                    # Si telegram_id différent, on met à jour (changement téléphone ou réinstallation)
+                    if eleves_ecole[texte].get("telegram_id") != chat_id:
+                        eleves_ecole[texte]["telegram_id"] = chat_id
 
                 sauvegarder_json(eleves_file, eleves)
                 envoyer_message_telegram(chat_id, f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({ecole_id})")
@@ -207,6 +219,8 @@ def telegram_webhook():
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
+    set_telegram_webhook()  # <- Assure que webhook est bien défini à chaque lancement
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
+
 
