@@ -37,7 +37,7 @@ def sauvegarder_json(fichier, data):
         print(f"Erreur sauvegarde {fichier}: {e}")
 
 def set_telegram_webhook():
-    url_webhook = f"https://ton_domaine_ou_ip/{BOT_TOKEN}"
+    url_webhook = f"https://serveur-flask.onrender.com/webhook/{BOT_TOKEN}"
     try:
         resp = requests.get(f"{TELEGRAM_API_URL}/setWebhook", params={"url": url_webhook})
         print("Webhook Telegram set:", resp.json())
@@ -74,11 +74,7 @@ def ajouter_eleve():
         eleves = charger_json(eleves_file)
         if ecole_id not in eleves:
             eleves[ecole_id] = {}
-        # Si élève existe, garder telegram_id existant
-        if eleve_id in eleves[ecole_id]:
-            telegram_id = eleves[ecole_id][eleve_id].get("telegram_id")
-        else:
-            telegram_id = None
+        telegram_id = eleves[ecole_id].get(eleve_id, {}).get("telegram_id")
         eleves[ecole_id][eleve_id] = {
             "nom": nom,
             "telegram_id": telegram_id
@@ -205,7 +201,7 @@ def telegram_webhook():
                         "telegram_id": chat_id
                     }
                 else:
-                    # Si telegram_id différent, on met à jour (changement téléphone ou réinstallation)
+                    # Mise à jour telegram_id automatique si différent (changement téléphone ou réinstall)
                     if eleves_ecole[texte].get("telegram_id") != chat_id:
                         eleves_ecole[texte]["telegram_id"] = chat_id
 
@@ -219,8 +215,7 @@ def telegram_webhook():
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
-    set_telegram_webhook()  # <- Assure que webhook est bien défini à chaque lancement
+    set_telegram_webhook()  # Configure le webhook au démarrage
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
-
 
