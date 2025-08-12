@@ -8,13 +8,34 @@
     "mmm": "bb"
   },
   "1235": {
-    "12+4": "bqbu",
-    "1234": "baraka",
-    "A001": "papa",
-    "A002": "mama",
-    "A003": "kaka",
-    "A004": "dada",
-    "gdg": "bininga",
+    "12+4": {
+      "nom": "bqbu",
+      "telegram_id": 7149417553
+    },
+    "1234": {
+      "nom": "baraka",
+      "telegram_id": 7149417553
+    },
+    "A001": {
+      "nom": "papa",
+      "telegram_id": 7149417553
+    },
+    "A002": {
+      "nom": "mama",
+      "telegram_id": 7149417553
+    },
+    "A003": {
+      "nom": "kaka",
+      "telegram_id": 7149417553
+    },
+    "A004": {
+      "nom": "dada",
+      "telegram_id": 7149417553
+    },
+    "gdg": {
+      "nom": "bininga",
+      "telegram_id": 7149417553
+    },
     "hdh": "hh",
     "jjfjf": "bb",
     "tt": "vovi",
