@@ -58,7 +58,6 @@ def verifier_ecole():
     data = request.get_json()
     ecole_id = data.get("id")
     ecoles = charger_json(ecoles_file)
-    print(f"verifier_ecole: id={ecole_id}")
     if ecole_id in ecoles:
         return jsonify({"success": True, "nom": ecoles[ecole_id]})
     return jsonify({"success": False})
@@ -69,7 +68,6 @@ def ajouter_eleve():
     ecole_id = data["ecole_id"]
     eleve_id = data["eleve_id"]
     nom = data["nom"]
-    print(f"ajouter_eleve: école={ecole_id}, élève={eleve_id} ({nom})")
     with verrou:
         eleves = charger_json(eleves_file)
         if ecole_id not in eleves:
@@ -86,10 +84,8 @@ def ajouter_eleve():
 def liste_eleves():
     data = request.get_json()
     ecole_id = data.get("ecole_id")
-    print(f"liste_eleves: demande pour école {ecole_id}")
     eleves = charger_json(eleves_file)
     if ecole_id not in eleves:
-        print(f"liste_eleves: école {ecole_id} non trouvée")
         return jsonify({})
     corrected = {}
     for eid, val in eleves[ecole_id].items():
@@ -108,7 +104,6 @@ def supprimer_eleve():
     data = request.get_json()
     ecole_id = data["ecole_id"]
     eleve_id = data["eleve_id"]
-    print(f"supprimer_eleve: école={ecole_id}, élève={eleve_id}")
     with verrou:
         eleves = charger_json(eleves_file)
         if ecole_id in eleves and eleve_id in eleves[ecole_id]:
@@ -137,12 +132,10 @@ def supprimer_message():
 
 @app.route("/eleves.json")
 def get_eleves():
-    print("Serve eleves.json")
     return send_from_directory(".", "eleves.json")
 
 @app.route("/messages.json")
 def get_messages():
-    print("Serve messages.json")
     return send_from_directory(".", "messages.json")
 
 @socketio.on("envoyer_message")
@@ -151,8 +144,6 @@ def envoyer_message(data):
     eleves = data["eleves"]
     message = data["message"]
     timestamp = datetime.now().isoformat()
-    print(f"envoyer_message: école={ecole_id}, message='{message}' aux élèves={eleves}")
-
     with verrou:
         messages = charger_json(messages_file)
         if ecole_id not in messages:
@@ -179,7 +170,6 @@ def envoyer_message(data):
         eleve_info = None
         for ec_id, e_dict in eleves_data.items():
             if eleve_id in e_dict:
-                # Normaliser les anciens formats string en dict
                 if isinstance(e_dict[eleve_id], str):
                     e_dict[eleve_id] = {"nom": e_dict[eleve_id], "telegram_id": None}
                 eleve_info = e_dict[eleve_id]
@@ -195,21 +185,37 @@ def telegram_webhook():
         texte = data["message"].get("text", "").strip()
 
         eleves = charger_json(eleves_file)
+        messages = charger_json(messages_file)
         trouve = False
         for ecole_id, eleves_ecole in eleves.items():
             if texte in eleves_ecole:
+                # Mise à jour info élève Telegram
                 if isinstance(eleves_ecole[texte], str):
                     eleves_ecole[texte] = {
                         "nom": eleves_ecole[texte],
                         "telegram_id": chat_id
                     }
                 else:
-                    # Mise à jour telegram_id automatique si différent (changement téléphone ou réinstall)
                     if eleves_ecole[texte].get("telegram_id") != chat_id:
                         eleves_ecole[texte]["telegram_id"] = chat_id
-
                 sauvegarder_json(eleves_file, eleves)
+
+                # Envoyer message de confirmation
                 envoyer_message_telegram(chat_id, f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({ecole_id})")
+
+                # Envoyer tous les messages non lus pour cet élève
+                msgs_a_envoyer = []
+                if ecole_id in messages:
+                    for m in messages[ecole_id]:
+                        if texte in m["eleves"]:
+                            msgs_a_envoyer.append(m)
+                    # Supprimer les messages envoyés
+                    if msgs_a_envoyer:
+                        messages[ecole_id] = [m for m in messages[ecole_id] if texte not in m["eleves"]]
+                        sauvegarder_json(messages_file, messages)
+                for m in msgs_a_envoyer:
+                    envoyer_message_telegram(chat_id, f"Message reçu le {m['timestamp']} : {m['contenu']}")
+
                 trouve = True
                 break
         if not trouve:
