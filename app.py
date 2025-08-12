@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, join_room, leave_room
 import json
 import os
 from threading import Lock
@@ -17,6 +17,8 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
+
+clients_connectes = {}  # eleve_id -> sid socket
 
 def charger_json(fichier):
     if not os.path.exists(fichier):
@@ -58,7 +60,6 @@ def verifier_ecole():
     data = request.get_json()
     ecole_id = data.get("id")
     ecoles = charger_json(ecoles_file)
-    print(f"verifier_ecole: id={ecole_id}")
     if ecole_id in ecoles:
         return jsonify({"success": True, "nom": ecoles[ecole_id]})
     return jsonify({"success": False})
@@ -69,7 +70,6 @@ def ajouter_eleve():
     ecole_id = data["ecole_id"]
     eleve_id = data["eleve_id"]
     nom = data["nom"]
-    print(f"ajouter_eleve: école={ecole_id}, élève={eleve_id} ({nom})")
     with verrou:
         eleves = charger_json(eleves_file)
         if ecole_id not in eleves:
@@ -86,10 +86,8 @@ def ajouter_eleve():
 def liste_eleves():
     data = request.get_json()
     ecole_id = data.get("ecole_id")
-    print(f"liste_eleves: demande pour école {ecole_id}")
     eleves = charger_json(eleves_file)
     if ecole_id not in eleves:
-        print(f"liste_eleves: école {ecole_id} non trouvée")
         return jsonify({})
     corrected = {}
     for eid, val in eleves[ecole_id].items():
@@ -108,7 +106,6 @@ def supprimer_eleve():
     data = request.get_json()
     ecole_id = data["ecole_id"]
     eleve_id = data["eleve_id"]
-    print(f"supprimer_eleve: école={ecole_id}, élève={eleve_id}")
     with verrou:
         eleves = charger_json(eleves_file)
         if ecole_id in eleves and eleve_id in eleves[ecole_id]:
@@ -137,13 +134,70 @@ def supprimer_message():
 
 @app.route("/eleves.json")
 def get_eleves():
-    print("Serve eleves.json")
     return send_from_directory(".", "eleves.json")
 
 @app.route("/messages.json")
 def get_messages():
-    print("Serve messages.json")
     return send_from_directory(".", "messages.json")
+
+# -- SOCKET.IO --
+
+@socketio.on('connect')
+def on_connect():
+    print(f"Client connecté sid={request.sid}")
+
+@socketio.on('identification')
+def on_identification(data):
+    eleve_id = data.get('eleve_id')
+    if not eleve_id:
+        return
+    clients_connectes[eleve_id] = request.sid
+    join_room(request.sid)
+    print(f"Élève {eleve_id} identifié et connecté avec sid={request.sid}")
+
+    # Envoi des messages non lus
+    with verrou:
+        messages = charger_json(messages_file)
+    for ecole_id, msgs in messages.items():
+        for m in msgs:
+            if eleve_id in m.get('eleves', []):
+                emit('nouveau_message', {
+                    "ecole_id": ecole_id,
+                    "message": m
+                }, room=request.sid)
+
+@socketio.on('confirmer_reception')
+def confirmer_reception(data):
+    ecole_id = data.get('ecole_id')
+    timestamp = data.get('timestamp')
+    eleve_id = data.get('eleve_id')
+    if not all([ecole_id, timestamp, eleve_id]):
+        return
+    with verrou:
+        messages = charger_json(messages_file)
+        if ecole_id in messages:
+            # Supprimer message reçu par cet élève
+            new_messages = []
+            for m in messages[ecole_id]:
+                if m['timestamp'] == timestamp:
+                    # Enlever cet élève de la liste destinataires
+                    m['eleves'] = [e for e in m['eleves'] if e != eleve_id]
+                    if m['eleves']:  # Si reste d'autres destinataires
+                        new_messages.append(m)
+                else:
+                    new_messages.append(m)
+            messages[ecole_id] = new_messages
+            sauvegarder_json(messages_file, messages)
+            print(f"Réception confirmée : élève {eleve_id} message {timestamp}")
+
+@socketio.on('disconnect')
+def on_disconnect():
+    sid = request.sid
+    for eleve_id, stored_sid in list(clients_connectes.items()):
+        if stored_sid == sid:
+            del clients_connectes[eleve_id]
+            print(f"Élève {eleve_id} déconnecté sid={sid}")
+            break
 
 @socketio.on("envoyer_message")
 def envoyer_message(data):
@@ -158,31 +212,35 @@ def envoyer_message(data):
         if ecole_id not in messages:
             messages[ecole_id] = []
         messages[ecole_id].append({
-            "eleves": eleves,
+            "eleves": eleves[:],  # copie liste destinataires
             "contenu": message,
             "timestamp": timestamp
         })
         sauvegarder_json(messages_file, messages)
 
     emit("confirmation", {"statut": "envoyé"}, broadcast=True)
-    emit("nouveau_message", {
-        "ecole_id": ecole_id,
-        "message": {
-            "eleves": eleves,
-            "contenu": message,
-            "timestamp": timestamp
-        }
-    }, broadcast=True)
-
-    eleves_data = charger_json(eleves_file)
     for eleve_id in eleves:
-        eleve_info = None
-        for ec_id, e_dict in eleves_data.items():
-            if eleve_id in e_dict:
-                eleve_info = e_dict[eleve_id]
-                break
-        if eleve_info and eleve_info.get("telegram_id"):
-            envoyer_message_telegram(eleve_info["telegram_id"], f"Message pour {eleve_info['nom']}: {message}")
+        sid = clients_connectes.get(eleve_id)
+        if sid:
+            # Envoyer directement via socket
+            emit("nouveau_message", {
+                "ecole_id": ecole_id,
+                "message": {
+                    "eleves": [eleve_id],
+                    "contenu": message,
+                    "timestamp": timestamp
+                }
+            }, room=sid)
+        else:
+            # Non connecté socket, envoyer par Telegram si possible
+            eleves_data = charger_json(eleves_file)
+            for ec_id, e_dict in eleves_data.items():
+                if eleve_id in e_dict:
+                    telegram_id = e_dict[eleve_id].get("telegram_id")
+                    nom = e_dict[eleve_id].get("nom")
+                    if telegram_id:
+                        envoyer_message_telegram(telegram_id, f"Message pour {nom}: {message}")
+                    break
 
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
@@ -201,7 +259,6 @@ def telegram_webhook():
                         "telegram_id": chat_id
                     }
                 else:
-                    # Mise à jour telegram_id automatique si différent (changement téléphone ou réinstall)
                     if eleves_ecole[texte].get("telegram_id") != chat_id:
                         eleves_ecole[texte]["telegram_id"] = chat_id
 
@@ -215,7 +272,8 @@ def telegram_webhook():
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
-    set_telegram_webhook()  # Configure le webhook au démarrage
+    set_telegram_webhook()
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
+
 
