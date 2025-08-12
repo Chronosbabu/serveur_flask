@@ -14,10 +14,11 @@ verrou = Lock()
 BOT_TOKEN = "8251629643:AAH1K4X-bjNQUOk_ym5p4BLVWLh3Ad6NF8M"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+# Fichiers JSON locaux
 eleves_file = "eleves.json"
 messages_file = "messages.json"
 ecoles_file = "ecoles.json"
-parents_file = "parents.json"  # NOUVEAU fichier pour stocker telegram_id parents
+parents_file = "parents.json"  # stocke les telegram_id parents
 
 def charger_json(fichier):
     if not os.path.exists(fichier):
@@ -53,6 +54,17 @@ def envoyer_message_telegram(chat_id, texte):
         })
     except Exception as e:
         print(f"Erreur envoi Telegram à {chat_id}: {e}")
+
+# 🔹 NOUVEL ENDPOINT pour tout exporter
+@app.route("/exporter_jsons", methods=["GET"])
+def exporter_jsons():
+    data = {
+        "eleves": charger_json(eleves_file),
+        "messages": charger_json(messages_file),
+        "ecoles": charger_json(ecoles_file),
+        "telegram_ids": charger_json(parents_file)
+    }
+    return jsonify(data)
 
 @app.route("/verifier_ecole", methods=["POST"])
 def verifier_ecole():
@@ -166,12 +178,10 @@ def envoyer_message(data):
         }
     }, broadcast=True)
 
-    # Charger aussi les parents
+    # Envoi Telegram
     parents = charger_json(parents_file)
     eleves_data = charger_json(eleves_file)
-
     for eleve_id in eleves:
-        # Envoi aux élèves
         eleve_info = None
         for ec_id, e_dict in eleves_data.items():
             if eleve_id in e_dict:
@@ -181,8 +191,6 @@ def envoyer_message(data):
                 break
         if eleve_info and eleve_info.get("telegram_id"):
             envoyer_message_telegram(eleve_info["telegram_id"], f"Message pour {eleve_info['nom']}: {message}")
-
-        # Envoi aux parents enregistrés
         if eleve_id in parents and parents[eleve_id]:
             envoyer_message_telegram(parents[eleve_id], f"(Parent) Message pour votre enfant {eleve_info['nom']}: {message}")
 
@@ -205,13 +213,9 @@ def telegram_webhook():
                 else:
                     eleves_ecole[texte]["telegram_id"] = chat_id
                 sauvegarder_json(eleves_file, eleves)
-
-                # Enregistrer aussi dans parents.json
                 parents[texte] = chat_id
                 sauvegarder_json(parents_file, parents)
-
                 envoyer_message_telegram(chat_id, f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({ecole_id})")
-
                 msgs_a_envoyer = []
                 if ecole_id in messages:
                     for m in messages[ecole_id]:
@@ -222,7 +226,6 @@ def telegram_webhook():
                         sauvegarder_json(messages_file, messages)
                 for m in msgs_a_envoyer:
                     envoyer_message_telegram(chat_id, f"Message reçu le {m['timestamp']} : {m['contenu']}")
-
                 trouve = True
                 break
         if not trouve:
