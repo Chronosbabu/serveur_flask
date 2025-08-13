@@ -18,7 +18,7 @@
     },
     "A001": {
       "nom": "papa",
-      "telegram_id": 7149417553
+      "telegram_id": 8108701971
     },
     "A002": {
       "nom": "mama",
@@ -36,10 +36,35 @@
       "nom": "bininga",
       "telegram_id": 7149417553
     },
-    "hdh": "hh",
-    "jjfjf": "bb",
-    "tt": "vovi",
-    "ttiio": "kakangu",
-    "vd": "bibi"
+    "hdh": {
+      "nom": "hh",
+      "telegram_id": null
+    },
+    "jjfjf": {
+      "nom": "bb",
+      "telegram_id": null
+    },
+    "jso": {
+      "nom": "ks",
+      "telegram_id": null
+    },
+    "tt": {
+      "nom": "vovi",
+      "telegram_id": null
+    },
+    "ttiio": {
+      "nom": "kakangu",
+      "telegram_id": null
+    },
+    "vd": {
+      "nom": "bibi",
+      "telegram_id": null
+    }
+  },
+  "WWW": {
+    "qq": {
+      "nom": "babu",
+      "telegram_id": null
+    }
   }
 }
