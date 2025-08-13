@@ -3,7 +3,8 @@ flask-socketio
 python-socketio
 eventlet
 gunicorn
-firebase-admin==6.1.2
+firebase-admin
+
 
 
 
