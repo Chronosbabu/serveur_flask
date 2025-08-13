@@ -168,8 +168,7 @@ def envoyer_message(data):
         })
         sauvegarder_json(messages_file, messages)
 
-    # 🔹 Correction ici : confirmation juste pour le client qui envoie
-    emit("confirmation", {"statut": "envoyé"}, room=request.sid)
+    emit("confirmation", {"statut": "envoyé"}, broadcast=True)
     emit("nouveau_message", {
         "ecole_id": ecole_id,
         "message": {
@@ -238,4 +237,5 @@ if __name__ == "__main__":
     set_telegram_webhook()
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
+
 

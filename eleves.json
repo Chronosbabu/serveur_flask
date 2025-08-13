@@ -1,12 +1,19 @@
 {
   "12310": {
-    "Z001": "kageee",
-    "Z002": "bdhdh",
-    "Z005": "xfff"
+    "Z001": {
+      "nom": "kageee",
+      "telegram_id": null
+    },
+    "Z002": {
+      "nom": "bdhdh",
+      "telegram_id": null
+    },
+    "Z005": {
+      "nom": "xfff",
+      "telegram_id": null
+    }
   },
-  "1234": {
-    "mmm": "bb"
-  },
+  "1234": {},
   "1235": {
     "12+4": {
       "nom": "bqbu",
@@ -15,6 +22,10 @@
     "1234": {
       "nom": "baraka",
       "telegram_id": 7149417553
+    },
+    "444": {
+      "nom": "doudou",
+      "telegram_id": null
     },
     "A001": {
       "nom": "papa",
@@ -36,10 +47,6 @@
       "nom": "bininga",
       "telegram_id": 7149417553
     },
-    "hdh": {
-      "nom": "hh",
-      "telegram_id": null
-    },
     "jjfjf": {
       "nom": "bb",
       "telegram_id": null
@@ -50,21 +57,17 @@
     },
     "tt": {
       "nom": "vovi",
-      "telegram_id": null
+      "telegram_id": 6865471691
     },
     "ttiio": {
       "nom": "kakangu",
       "telegram_id": 8108701971
-    },
-    "vd": {
-      "nom": "bibi",
-      "telegram_id": 7149417553
     }
   },
   "WWW": {
     "qq": {
       "nom": "babu",
-      "telegram_id": null
+      "telegram_id": 7729699695
     }
   }
 }
