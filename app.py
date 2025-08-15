@@ -68,7 +68,6 @@ def envoyer_message_telegram(chat_id, texte):
             print(f"Erreur envoi Telegram à {chat_id}: {e}")
     executor.submit(send)
 
-# 🔹 ENDPOINTS (mêmes que ton code, inchangés)
 @app.route("/exporter_jsons", methods=["GET"])
 def exporter_jsons():
     return jsonify({
@@ -97,7 +96,6 @@ def ajouter_eleve():
         if ecole_id not in eleves:
             eleves[ecole_id] = {}
         telegram_id = eleves[ecole_id].get(eleve_id, {}).get("telegram_id")
-        # 🔥 Ajouté: Enregistrer la classe avec l'élève
         eleves[ecole_id][eleve_id] = {"nom": nom, "classe": classe, "telegram_id": telegram_id}
         sauvegarder_json(eleves_ref, eleves)
     return jsonify({"success": True})
@@ -110,7 +108,6 @@ def liste_eleves():
     if ecole_id not in eleves: return jsonify({})
     corrected = {}
     for eid, val in eleves[ecole_id].items():
-        # 🔥 Ajouté: correction pour garantir présence de 'classe'
         if isinstance(val, str):
             corrected[eid] = {"nom": val, "classe": "", "telegram_id": None}
         else:
@@ -172,7 +169,7 @@ def envoyer_message(data):
     eleves_data = charger_json(eleves_ref)
     ecoles_data = charger_json(ecoles_ref)
 
-    # 🔥 Correction : éviter les doublons d'envoi pour un même parent
+    # Correction : chaque parent sélectionné reçoit son message, mais sans doublon pour un même chat_id
     parents_envoyes = set()
     for eleve_id in eleves:
         eleve_info = None
@@ -186,14 +183,13 @@ def envoyer_message(data):
                 break
         if eleve_info:
             texte = f"<b>Message pour {eleve_info['nom']}</b>\n\n{message}"
-            # On n'envoie qu'une fois par parent
-            # Priorité : telegram_id lié à l'élève (si différent du parents_ref)
-            ids_possibles = []
+            # On envoie à chaque parent associé à cet élève, mais un seul message par chat_id unique
+            ids_possibles = set()
             if eleve_info.get("telegram_id"):
-                ids_possibles.append(eleve_info["telegram_id"])
+                ids_possibles.add(str(eleve_info["telegram_id"]))
             if eleve_id in parents and parents[eleve_id]:
-                ids_possibles.append(parents[eleve_id])
-
+                ids_possibles.add(str(parents[eleve_id]))
+            # Envoyer à chaque chat_id unique non déjà envoyé pour ce message
             for pid in ids_possibles:
                 if pid and pid not in parents_envoyes:
                     envoyer_message_telegram(pid, texte)
@@ -218,7 +214,6 @@ def telegram_webhook():
         ecoles_data = charger_json(ecoles_ref)
         ecole_id, eleve_id, eleve_info = trouver_eleve_par_id(texte, eleves)
         if eleve_info:
-            # 🔥 On conserve toutes les infos (nom, classe, telegram_id)
             if isinstance(eleve_info, str):
                 eleve_info = {"nom": eleve_info, "classe": "", "telegram_id": chat_id}
             else:
