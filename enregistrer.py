@@ -2,7 +2,7 @@ import firebase_admin
 from firebase_admin import credentials, db
 
 # 🔹 Chemin vers ton fichier JSON Firebase (service account)
-chemin_clef = r"C:\Users\Alfred M\Desktop\serveur_flask\serviceAccountKey.json"
+chemin_clef = r"C:\Users\Alfred M\Desktop\serviceAccountKey.json"
 
 # 🔹 Initialisation Firebase
 cred = credentials.Certificate(chemin_clef)
@@ -35,4 +35,3 @@ while True:
         break
 
 print("Fin de l'ajout des écoles.")
-
