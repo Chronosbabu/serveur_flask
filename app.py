@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, request, jsonify
 from flask_socketio import SocketIO, emit
 import json
@@ -7,7 +10,7 @@ from datetime import datetime
 import requests
 import firebase_admin
 from firebase_admin import credentials, db
-import eventlet
+
 import concurrent.futures
 
 # 🔹 Utiliser Eventlet pour la puissance et le async
