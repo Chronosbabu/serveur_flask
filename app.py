@@ -172,7 +172,8 @@ def envoyer_message(data):
     eleves_data = charger_json(eleves_ref)
     ecoles_data = charger_json(ecoles_ref)
 
-    # Envoi parallèle des messages Telegram
+    # 🔥 Correction : éviter les doublons d'envoi pour un même parent
+    parents_envoyes = set()
     for eleve_id in eleves:
         eleve_info = None
         nom_ecole = ""
@@ -185,8 +186,18 @@ def envoyer_message(data):
                 break
         if eleve_info:
             texte = f"<b>Message pour {eleve_info['nom']}</b>\n\n{message}"
-            if eleve_info.get("telegram_id"): envoyer_message_telegram(eleve_info["telegram_id"], texte)
-            if eleve_id in parents and parents[eleve_id]: envoyer_message_telegram(parents[eleve_id], texte)
+            # On n'envoie qu'une fois par parent
+            # Priorité : telegram_id lié à l'élève (si différent du parents_ref)
+            ids_possibles = []
+            if eleve_info.get("telegram_id"):
+                ids_possibles.append(eleve_info["telegram_id"])
+            if eleve_id in parents and parents[eleve_id]:
+                ids_possibles.append(parents[eleve_id])
+
+            for pid in ids_possibles:
+                if pid and pid not in parents_envoyes:
+                    envoyer_message_telegram(pid, texte)
+                    parents_envoyes.add(pid)
 
 def trouver_eleve_par_id(texte, eleves):
     texte = texte.strip()
