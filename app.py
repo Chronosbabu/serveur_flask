@@ -1,3 +1,5 @@
+# --- CODE COMPLET AVEC CORRECTION ---
+
 import eventlet
 eventlet.monkey_patch()
 
@@ -10,11 +12,7 @@ from datetime import datetime
 import requests
 import firebase_admin
 from firebase_admin import credentials, db
-
 import concurrent.futures
-
-# 🔹 Utiliser Eventlet pour la puissance et le async
-eventlet.monkey_patch()
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -37,7 +35,6 @@ messages_ref = db.reference("messages")
 ecoles_ref = db.reference("ecoles")
 parents_ref = db.reference("parents")
 
-# 🔹 Fonctions pour lire/écrire sur Firebase
 def charger_json(ref):
     data = ref.get()
     return data if data else {}
@@ -53,8 +50,7 @@ def set_telegram_webhook():
     except Exception as e:
         print("Erreur setWebhook Telegram:", e)
 
-# 🔹 Envoi de message Telegram en parallèle
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=200)  # Augmente fortement!
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=200)
 
 def envoyer_message_telegram(chat_id, texte):
     def send():
@@ -157,11 +153,13 @@ def envoyer_message(data):
     eleves = data["eleves"]
     message = data["message"]
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     with verrou:
         messages_data = charger_json(messages_ref)
         if ecole_id not in messages_data: messages_data[ecole_id] = []
         messages_data[ecole_id].append({"eleves": eleves, "contenu": message, "timestamp": timestamp})
         sauvegarder_json(messages_ref, messages_data)
+
     emit("confirmation", {"statut": "envoyé"}, room=request.sid)
     emit("nouveau_message", {"ecole_id": ecole_id, "message": {"eleves": eleves, "contenu": message, "timestamp": timestamp}}, broadcast=True)
 
@@ -169,38 +167,27 @@ def envoyer_message(data):
     eleves_data = charger_json(eleves_ref)
     ecoles_data = charger_json(ecoles_ref)
 
-    # ENVOI MASSIF, simultané, pour chaque parent/élève unique concerné
     deja_envoye = set()
     for eleve_id in eleves:
-        eleve_info = None
-        nom_ecole = ""
         for ec_id, e_dict in eleves_data.items():
             if eleve_id in e_dict:
                 if isinstance(e_dict[eleve_id], str):
                     e_dict[eleve_id] = {"nom": e_dict[eleve_id], "classe": "", "telegram_id": None}
                 eleve_info = e_dict[eleve_id]
                 nom_ecole = ecoles_data.get(ec_id, "")
-                break
-        if eleve_info:
-            # Envoi à telegram_id de l'élève (si dispo)
-            if eleve_info.get("telegram_id") and eleve_info["telegram_id"] not in deja_envoye:
-                texte = (
-                    f"📣 <b>Message pour <u>{eleve_info['nom']}</u></b>\n"
-                    f"<i>{nom_ecole}</i>\n\n"
-                    f"<code>{message}</code>"
-                )
-                envoyer_message_telegram(eleve_info["telegram_id"], texte)
-                deja_envoye.add(eleve_info["telegram_id"])
-            # Envoi à parent (si dispo et différent de telegram_id de l'élève)
-            parent_id = parents.get(eleve_id)
-            if parent_id and parent_id not in deja_envoye:
-                texte = (
-                    f"📣 <b>Message pour <u>{eleve_info['nom']}</u></b>\n"
-                    f"<i>{nom_ecole}</i>\n\n"
-                    f"<code>{message}</code>"
-                )
-                envoyer_message_telegram(parent_id, texte)
-                deja_envoye.add(parent_id)
+
+                # Envoi à l'élève
+                if eleve_info.get("telegram_id") and eleve_info["telegram_id"] not in deja_envoye:
+                    texte = f"📣 <b>Message pour <u>{eleve_info['nom']}</u></b>\n<i>{nom_ecole}</i>\n\n<code>{message}</code>"
+                    envoyer_message_telegram(eleve_info["telegram_id"], texte)
+                    deja_envoye.add(eleve_info["telegram_id"])
+
+                # Envoi au parent
+                parent_id = parents.get(eleve_id)
+                if parent_id and parent_id not in deja_envoye:
+                    texte = f"📣 <b>Message pour <u>{eleve_info['nom']}</u></b>\n<i>{nom_ecole}</i>\n\n<code>{message}</code>"
+                    envoyer_message_telegram(parent_id, texte)
+                    deja_envoye.add(parent_id)
 
 def trouver_eleve_par_id(texte, eleves):
     texte = texte.strip()
@@ -232,18 +219,12 @@ def telegram_webhook():
             nom_eleve = eleve_info['nom']
             nom_ecole = ecoles_data.get(ecole_id, "")
             envoyer_message_telegram(chat_id, f"✅ <b>Élève trouvé : <u>{nom_eleve}</u> ({nom_ecole})</b>")
-
             msgs_a_envoyer = [m for m in messages_data.get(ecole_id, []) if eleve_id in m["eleves"]]
             if msgs_a_envoyer:
                 messages_data[ecole_id] = [m for m in messages_data[ecole_id] if eleve_id not in m["eleves"]]
                 sauvegarder_json(messages_ref, messages_data)
             for m in msgs_a_envoyer:
-                envoyer_message_telegram(
-                    chat_id,
-                    f"📣 <b>Message pour <u>{nom_eleve}</u></b>\n"
-                    f"<i>{nom_ecole}</i>\n\n"
-                    f"<code>{m['contenu']}</code>"
-                )
+                envoyer_message_telegram(chat_id, f"📣 <b>Message pour <u>{nom_eleve}</u></b>\n<i>{nom_ecole}</i>\n\n<code>{m['contenu']}</code>")
         else:
             envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.")
     return jsonify({"ok": True})
@@ -252,3 +233,4 @@ if __name__ == "__main__":
     set_telegram_webhook()
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
+
