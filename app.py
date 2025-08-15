@@ -54,7 +54,7 @@ def set_telegram_webhook():
         print("Erreur setWebhook Telegram:", e)
 
 # 🔹 Envoi de message Telegram en parallèle
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=20)
+executor = concurrent.futures.ThreadPoolExecutor(max_workers=200)  # Augmente fortement!
 
 def envoyer_message_telegram(chat_id, texte):
     def send():
@@ -68,7 +68,6 @@ def envoyer_message_telegram(chat_id, texte):
             print(f"Erreur envoi Telegram à {chat_id}: {e}")
     executor.submit(send)
 
-# 🔹 ENDPOINTS (mêmes que ton code, inchangés)
 @app.route("/exporter_jsons", methods=["GET"])
 def exporter_jsons():
     return jsonify({
@@ -91,13 +90,12 @@ def ajouter_eleve():
     ecole_id = data["ecole_id"]
     eleve_id = data["eleve_id"]
     nom = data["nom"]
-    classe = data.get("classe", "")  # 🔥 Ajouté: prise en charge du champ "classe"
+    classe = data.get("classe", "")
     with verrou:
         eleves = charger_json(eleves_ref)
         if ecole_id not in eleves:
             eleves[ecole_id] = {}
         telegram_id = eleves[ecole_id].get(eleve_id, {}).get("telegram_id")
-        # 🔥 Ajouté: Enregistrer la classe avec l'élève
         eleves[ecole_id][eleve_id] = {"nom": nom, "classe": classe, "telegram_id": telegram_id}
         sauvegarder_json(eleves_ref, eleves)
     return jsonify({"success": True})
@@ -110,7 +108,6 @@ def liste_eleves():
     if ecole_id not in eleves: return jsonify({})
     corrected = {}
     for eid, val in eleves[ecole_id].items():
-        # 🔥 Ajouté: correction pour garantir présence de 'classe'
         if isinstance(val, str):
             corrected[eid] = {"nom": val, "classe": "", "telegram_id": None}
         else:
@@ -172,7 +169,7 @@ def envoyer_message(data):
     eleves_data = charger_json(eleves_ref)
     ecoles_data = charger_json(ecoles_ref)
 
-    # 🔥 Correction ENVOI UNIQUE par parent, et message plus joli
+    # ENVOI MASSIF, simultané, pour chaque parent/élève unique concerné
     deja_envoye = set()
     for eleve_id in eleves:
         eleve_info = None
@@ -224,7 +221,6 @@ def telegram_webhook():
         ecoles_data = charger_json(ecoles_ref)
         ecole_id, eleve_id, eleve_info = trouver_eleve_par_id(texte, eleves)
         if eleve_info:
-            # 🔥 On conserve toutes les infos (nom, classe, telegram_id)
             if isinstance(eleve_info, str):
                 eleve_info = {"nom": eleve_info, "classe": "", "telegram_id": chat_id}
             else:
@@ -237,13 +233,11 @@ def telegram_webhook():
             nom_ecole = ecoles_data.get(ecole_id, "")
             envoyer_message_telegram(chat_id, f"✅ <b>Élève trouvé : <u>{nom_eleve}</u> ({nom_ecole})</b>")
 
-            # envoyer messages en attente en parallèle
             msgs_a_envoyer = [m for m in messages_data.get(ecole_id, []) if eleve_id in m["eleves"]]
             if msgs_a_envoyer:
                 messages_data[ecole_id] = [m for m in messages_data[ecole_id] if eleve_id not in m["eleves"]]
                 sauvegarder_json(messages_ref, messages_data)
             for m in msgs_a_envoyer:
-                # 🔥 Nouveau style joli, titre bien distinct
                 envoyer_message_telegram(
                     chat_id,
                     f"📣 <b>Message pour <u>{nom_eleve}</u></b>\n"
