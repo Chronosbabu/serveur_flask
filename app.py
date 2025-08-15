@@ -159,7 +159,7 @@ def envoyer_message(data):
     ecole_id = data["ecole_id"]
     eleves = data["eleves"]
     message = data["message"]
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")  # date locale
     with verrou:
         messages = charger_json(messages_ref)
         if ecole_id not in messages:
@@ -195,11 +195,11 @@ def envoyer_message(data):
                 nom_ecole = ecoles_data.get(ec_id, "")
                 break
         if eleve_info:
-            texte_eleve = f"<b>Message pour {eleve_info['nom']}</b>\n{message}"
+            texte_eleve = f"<b>Message pour {eleve_info['nom']}</b>\n\n{message}"  # saut de ligne ajouté
             if eleve_info.get("telegram_id"):
                 envoyer_message_telegram(eleve_info["telegram_id"], texte_eleve)
             if eleve_id in parents and parents[eleve_id]:
-                texte_parent = f"<b>Message pour {eleve_info['nom']}</b>\n{message}"
+                texte_parent = f"<b>Message pour {eleve_info['nom']}</b>\n\n{message}"  # saut de ligne ajouté
                 envoyer_message_telegram(parents[eleve_id], texte_parent)
 
 # 🔹 Fonction pour trouver un élève avec ID correct, même avec espaces ou types différents
@@ -253,7 +253,7 @@ def telegram_webhook():
                     messages[ecole_id] = [m for m in messages[ecole_id] if eleve_id not in m["eleves"]]
                     sauvegarder_json(messages_ref, messages)
             for m in msgs_a_envoyer:
-                envoyer_message_telegram(chat_id, f"<b>Message pour {nom_eleve}</b>\n{m['contenu']}")
+                envoyer_message_telegram(chat_id, f"<b>Message pour {nom_eleve}</b>\n\n{m['contenu']}")  # saut de ligne ajouté
         else:
             envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.")
 
