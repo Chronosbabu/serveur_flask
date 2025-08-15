@@ -47,11 +47,13 @@ def set_telegram_webhook():
     except Exception as e:
         print("Erreur setWebhook Telegram:", e)
 
+# 🔹 Modification ici pour envoyer un message formaté
 def envoyer_message_telegram(chat_id, texte):
     try:
         requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
             "chat_id": chat_id,
-            "text": texte
+            "text": texte,
+            "parse_mode": "HTML"  # permet gras, italique, etc.
         })
     except Exception as e:
         print(f"Erreur envoi Telegram à {chat_id}: {e}")
@@ -181,18 +183,33 @@ def envoyer_message(data):
 
     parents = charger_json(parents_ref)
     eleves_data = charger_json(eleves_ref)
+    ecoles_data = charger_json(ecoles_ref)
     for eleve_id in eleves:
         eleve_info = None
+        nom_ecole = ""
         for ec_id, e_dict in eleves_data.items():
             if eleve_id in e_dict:
                 if isinstance(e_dict[eleve_id], str):
                     e_dict[eleve_id] = {"nom": e_dict[eleve_id], "telegram_id": None}
                 eleve_info = e_dict[eleve_id]
+                nom_ecole = ecoles_data.get(ec_id, "")
                 break
-        if eleve_info and eleve_info.get("telegram_id"):
-            envoyer_message_telegram(eleve_info["telegram_id"], f"Message pour {eleve_info['nom']}: {message}")
-        if eleve_id in parents and parents[eleve_id]:
-            envoyer_message_telegram(parents[eleve_id], f"(Parent) Message pour votre enfant {eleve_info['nom']}: {message}")
+        if eleve_info:
+            texte_eleve = f"<b>Message pour {eleve_info['nom']}</b>\n{message}"
+            if eleve_info.get("telegram_id"):
+                envoyer_message_telegram(eleve_info["telegram_id"], texte_eleve)
+            if eleve_id in parents and parents[eleve_id]:
+                texte_parent = f"<b>Message pour {eleve_info['nom']}</b>\n{message}"
+                envoyer_message_telegram(parents[eleve_id], texte_parent)
+
+# 🔹 Fonction pour trouver un élève avec ID correct, même avec espaces ou types différents
+def trouver_eleve_par_id(texte, eleves):
+    texte = texte.strip()
+    for ecole_id, eleves_ecole in eleves.items():
+        eleves_ecole = {str(k): v for k, v in eleves_ecole.items()}  # forcer clés str
+        if texte in eleves_ecole:
+            return ecole_id, texte, eleves_ecole[texte]
+    return None, None, None
 
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
@@ -204,31 +221,40 @@ def telegram_webhook():
         eleves = charger_json(eleves_ref)
         parents = charger_json(parents_ref)
         messages = charger_json(messages_ref)
-        trouve = False
+        ecoles_data = charger_json(ecoles_ref)
 
-        for ecole_id, eleves_ecole in eleves.items():
-            if texte in eleves_ecole:
-                if isinstance(eleves_ecole[texte], str):
-                    eleves_ecole[texte] = {"nom": eleves_ecole[texte], "telegram_id": chat_id}
-                else:
-                    eleves_ecole[texte]["telegram_id"] = chat_id
-                sauvegarder_json(eleves_ref, eleves)
-                parents[texte] = chat_id
-                sauvegarder_json(parents_ref, parents)
-                envoyer_message_telegram(chat_id, f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({ecole_id})")
-                msgs_a_envoyer = []
-                if ecole_id in messages:
-                    for m in messages[ecole_id]:
-                        if texte in m["eleves"]:
-                            msgs_a_envoyer.append(m)
-                    if msgs_a_envoyer:
-                        messages[ecole_id] = [m for m in messages[ecole_id] if texte not in m["eleves"]]
-                        sauvegarder_json(messages_ref, messages)
-                for m in msgs_a_envoyer:
-                    envoyer_message_telegram(chat_id, f"Message reçu le {m['timestamp']} : {m['contenu']}")
-                trouve = True
-                break
-        if not trouve:
+        ecole_id, eleve_id, eleve_info = trouver_eleve_par_id(texte, eleves)
+
+        if eleve_info:
+            # mettre telegram_id
+            if isinstance(eleve_info, str):
+                eleve_info = {"nom": eleve_info, "telegram_id": chat_id}
+            else:
+                eleve_info["telegram_id"] = chat_id
+            # sauvegarder
+            eleves[ecole_id][eleve_id] = eleve_info
+            sauvegarder_json(eleves_ref, eleves)
+
+            parents[eleve_id] = chat_id
+            sauvegarder_json(parents_ref, parents)
+
+            nom_eleve = eleve_info['nom']
+            nom_ecole = ecoles_data.get(ecole_id, "")
+            confirmation = f"✅ <b>Élève trouvé : {nom_eleve} ({nom_ecole})</b>"
+            envoyer_message_telegram(chat_id, confirmation)
+
+            # envoyer messages en attente
+            msgs_a_envoyer = []
+            if ecole_id in messages:
+                for m in messages[ecole_id]:
+                    if eleve_id in m["eleves"]:
+                        msgs_a_envoyer.append(m)
+                if msgs_a_envoyer:
+                    messages[ecole_id] = [m for m in messages[ecole_id] if eleve_id not in m["eleves"]]
+                    sauvegarder_json(messages_ref, messages)
+            for m in msgs_a_envoyer:
+                envoyer_message_telegram(chat_id, f"<b>Message pour {nom_eleve}</b>\n{m['contenu']}")
+        else:
             envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.")
 
     return jsonify({"ok": True})
@@ -237,6 +263,4 @@ if __name__ == "__main__":
     set_telegram_webhook()
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
-
-
 
