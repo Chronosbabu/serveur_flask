@@ -47,16 +47,13 @@ def set_telegram_webhook():
     except Exception as e:
         print("Erreur setWebhook Telegram:", e)
 
-# 🔹 Envoi Telegram formaté
-def envoyer_message_telegram(chat_id, titre, message):
-    # titre : string en gras et rouge
-    # message : texte normal
-    texte = f"<b><span style='color:red'>{titre}</span></b>\n{message}"
+# 🔹 Modification ici pour envoyer un message formaté
+def envoyer_message_telegram(chat_id, texte):
     try:
         requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
             "chat_id": chat_id,
             "text": texte,
-            "parse_mode": "HTML"
+            "parse_mode": "HTML"  # permet gras, italique, etc.
         })
     except Exception as e:
         print(f"Erreur envoi Telegram à {chat_id}: {e}")
@@ -195,16 +192,15 @@ def envoyer_message(data):
                 if isinstance(e_dict[eleve_id], str):
                     e_dict[eleve_id] = {"nom": e_dict[eleve_id], "telegram_id": None}
                 eleve_info = e_dict[eleve_id]
-                nom_ecole = ecoles_data.get(ec_id, ec_id)
+                nom_ecole = ecoles_data.get(ec_id, "")
                 break
-        if eleve_info and eleve_info.get("telegram_id"):
-            envoyer_message_telegram(eleve_info["telegram_id"],
-                                      f"Message pour {eleve_info['nom']}",
-                                      message)
-        if eleve_id in parents and parents[eleve_id]:
-            envoyer_message_telegram(parents[eleve_id],
-                                      f"(Parent) Message pour votre enfant {eleve_info['nom']}",
-                                      message)
+        if eleve_info:
+            texte_eleve = f"<b>Message pour {eleve_info['nom']}</b>\n{message}"
+            if eleve_info.get("telegram_id"):
+                envoyer_message_telegram(eleve_info["telegram_id"], texte_eleve)
+            if eleve_id in parents and parents[eleve_id]:
+                texte_parent = f"<b>Message pour {eleve_info['nom']}</b>\n{message}"
+                envoyer_message_telegram(parents[eleve_id], texte_parent)
 
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
@@ -228,10 +224,11 @@ def telegram_webhook():
                 sauvegarder_json(eleves_ref, eleves)
                 parents[texte] = chat_id
                 sauvegarder_json(parents_ref, parents)
-                nom_ecole = ecoles_data.get(ecole_id, ecole_id)
-                envoyer_message_telegram(chat_id,
-                                          f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({nom_ecole})",
-                                          "")
+                nom_eleve = eleves_ecole[texte]['nom']
+                nom_ecole = ecoles_data.get(ecole_id, "")
+                confirmation = f"✅ <b>Élève trouvé : {nom_eleve} ({nom_ecole})</b>"
+                envoyer_message_telegram(chat_id, confirmation)
+
                 msgs_a_envoyer = []
                 if ecole_id in messages:
                     for m in messages[ecole_id]:
@@ -241,13 +238,11 @@ def telegram_webhook():
                         messages[ecole_id] = [m for m in messages[ecole_id] if texte not in m["eleves"]]
                         sauvegarder_json(messages_ref, messages)
                 for m in msgs_a_envoyer:
-                    envoyer_message_telegram(chat_id,
-                                              f"Message pour {eleves_ecole[texte]['nom']}",
-                                              m["contenu"])
+                    envoyer_message_telegram(chat_id, f"<b>Message pour {nom_eleve}</b>\n{m['contenu']}")
                 trouve = True
                 break
         if not trouve:
-            envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.", "")
+            envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.")
 
     return jsonify({"ok": True})
 
@@ -255,5 +250,4 @@ if __name__ == "__main__":
     set_telegram_webhook()
     port = int(os.environ.get("PORT", 10000))
     socketio.run(app, host="0.0.0.0", port=port)
-
 
