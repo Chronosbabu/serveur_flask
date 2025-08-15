@@ -151,6 +151,16 @@ def get_eleves(): return jsonify(charger_json(eleves_ref))
 @app.route("/messages.json")
 def get_messages(): return jsonify(charger_json(messages_ref))
 
+def beautify_title(nom_eleve):
+    # Emoji et style pour un titre qui ressort
+    # Tu peux changer les emojis selon tes préférences
+    return (
+        "<b>"
+        "✨👦🏻👧🏽✨ <u><span style=\"font-size:20px; color:#4682B4;\">MESSAGE POUR "
+        f"{nom_eleve.upper()}</span></u> ✨👦🏻👧🏽✨"
+        "</b>"
+    )
+
 @socketio.on("envoyer_message")
 def envoyer_message(data):
     ecole_id = data["ecole_id"]
@@ -169,7 +179,7 @@ def envoyer_message(data):
     eleves_data = charger_json(eleves_ref)
     ecoles_data = charger_json(ecoles_ref)
 
-    # 🔥 Correction : chaque parent reçoit le message pour chaque élève sélectionné (jamais en double pour le même élève)
+    # 🔥 Correction & amélioration design du message
     deja_envoye = set()
     for eleve_id in eleves:
         eleve_info = None
@@ -182,13 +192,16 @@ def envoyer_message(data):
                 nom_ecole = ecoles_data.get(ec_id, "")
                 break
         if eleve_info:
-            texte = f"<b>Message pour {eleve_info['nom']}</b>\n\n{message}"
+            titre = beautify_title(eleve_info['nom'])
+            # Ajout d'un séparateur graphique avec emoji
+            separateur = "━━━━━━━━━━━━━━━━━━━━\n🎓"
+            # Message final avec stickers et style
+            texte = f"{titre}\n{separateur}\n\n{message}\n\n{separateur}"
             chat_ids = set()
             if eleve_info.get("telegram_id"):
                 chat_ids.add(str(eleve_info["telegram_id"]))
             if eleve_id in parents and parents[eleve_id]:
                 chat_ids.add(str(parents[eleve_id]))
-            # Pour chaque élève, on envoie à chaque parent unique du tableau, mais jamais deux fois pour ce élève
             for pid in chat_ids:
                 identifiant = f"{pid}-{eleve_id}"
                 if pid and identifiant not in deja_envoye:
@@ -224,7 +237,10 @@ def telegram_webhook():
             sauvegarder_json(parents_ref, parents)
             nom_eleve = eleve_info['nom']
             nom_ecole = ecoles_data.get(ecole_id, "")
-            envoyer_message_telegram(chat_id, f"✅ <b>Élève trouvé : {nom_eleve} ({nom_ecole})</b>")
+            # Message de confirmation stylisé
+            titre = beautify_title(nom_eleve)
+            separateur = "━━━━━━━━━━━━━━━━━━━━\n🎓"
+            envoyer_message_telegram(chat_id, f"✅ {titre}\n{separateur}\n<b>Élève trouvé : {nom_eleve} ({nom_ecole})</b>\n{separateur}")
 
             # envoyer messages en attente en parallèle
             msgs_a_envoyer = [m for m in messages_data.get(ecole_id, []) if eleve_id in m["eleves"]]
@@ -232,7 +248,9 @@ def telegram_webhook():
                 messages_data[ecole_id] = [m for m in messages_data[ecole_id] if eleve_id not in m["eleves"]]
                 sauvegarder_json(messages_ref, messages_data)
             for m in msgs_a_envoyer:
-                envoyer_message_telegram(chat_id, f"<b>Message pour {nom_eleve}</b>\n\n{m['contenu']}")
+                titre = beautify_title(nom_eleve)
+                texte_msg = f"{titre}\n━━━━━━━━━━━━━━━━━━━━\n🎓\n\n{m['contenu']}\n\n━━━━━━━━━━━━━━━━━━━━"
+                envoyer_message_telegram(chat_id, texte_msg)
         else:
             envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.")
     return jsonify({"ok": True})
