@@ -91,12 +91,14 @@ def ajouter_eleve():
     ecole_id = data["ecole_id"]
     eleve_id = data["eleve_id"]
     nom = data["nom"]
+    classe = data.get("classe", "")  # 🔥 Ajouté: prise en charge du champ "classe"
     with verrou:
         eleves = charger_json(eleves_ref)
         if ecole_id not in eleves:
             eleves[ecole_id] = {}
         telegram_id = eleves[ecole_id].get(eleve_id, {}).get("telegram_id")
-        eleves[ecole_id][eleve_id] = {"nom": nom, "telegram_id": telegram_id}
+        # 🔥 Ajouté: Enregistrer la classe avec l'élève
+        eleves[ecole_id][eleve_id] = {"nom": nom, "classe": classe, "telegram_id": telegram_id}
         sauvegarder_json(eleves_ref, eleves)
     return jsonify({"success": True})
 
@@ -106,7 +108,17 @@ def liste_eleves():
     ecole_id = data.get("ecole_id")
     eleves = charger_json(eleves_ref)
     if ecole_id not in eleves: return jsonify({})
-    corrected = {eid: ({"nom": val, "telegram_id": None} if isinstance(val, str) else val) for eid, val in eleves[ecole_id].items()}
+    corrected = {}
+    for eid, val in eleves[ecole_id].items():
+        # 🔥 Ajouté: correction pour garantir présence de 'classe'
+        if isinstance(val, str):
+            corrected[eid] = {"nom": val, "classe": "", "telegram_id": None}
+        else:
+            corrected[eid] = {
+                "nom": val.get("nom", ""),
+                "classe": val.get("classe", ""),
+                "telegram_id": val.get("telegram_id")
+            }
     if corrected != eleves[ecole_id]:
         eleves[ecole_id] = corrected
         with verrou: sauvegarder_json(eleves_ref, eleves)
@@ -167,7 +179,7 @@ def envoyer_message(data):
         for ec_id, e_dict in eleves_data.items():
             if eleve_id in e_dict:
                 if isinstance(e_dict[eleve_id], str):
-                    e_dict[eleve_id] = {"nom": e_dict[eleve_id], "telegram_id": None}
+                    e_dict[eleve_id] = {"nom": e_dict[eleve_id], "classe": "", "telegram_id": None}
                 eleve_info = e_dict[eleve_id]
                 nom_ecole = ecoles_data.get(ec_id, "")
                 break
@@ -195,8 +207,11 @@ def telegram_webhook():
         ecoles_data = charger_json(ecoles_ref)
         ecole_id, eleve_id, eleve_info = trouver_eleve_par_id(texte, eleves)
         if eleve_info:
-            if isinstance(eleve_info, str): eleve_info = {"nom": eleve_info, "telegram_id": chat_id}
-            else: eleve_info["telegram_id"] = chat_id
+            # 🔥 On conserve toutes les infos (nom, classe, telegram_id)
+            if isinstance(eleve_info, str):
+                eleve_info = {"nom": eleve_info, "classe": "", "telegram_id": chat_id}
+            else:
+                eleve_info["telegram_id"] = chat_id
             eleves[ecole_id][eleve_id] = eleve_info
             sauvegarder_json(eleves_ref, eleves)
             parents[eleve_id] = chat_id
