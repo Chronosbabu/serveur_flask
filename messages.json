@@ -80,13 +80,6 @@
       "timestamp": "2025-08-15T06:39:04.023730"
     },
     {
-      "contenu": "hello",
-      "eleves": [
-        "M001"
-      ],
-      "timestamp": "2025-08-15T06:42:32.761250"
-    },
-    {
       "contenu": "salut",
       "eleves": [
         "2ZYCUA"
@@ -106,13 +99,6 @@
         "M002"
       ],
       "timestamp": "2025-08-15T08:20:43.874385"
-    },
-    {
-      "contenu": "jwjwudu",
-      "eleves": [
-        "M001"
-      ],
-      "timestamp": "2025-08-15T08:20:54.012781"
     },
     {
       "contenu": "jdjsu",
@@ -160,18 +146,11 @@
   ],
   "E0002": [
     {
-      "contenu": "keiek",
+      "contenu": "jdjdjd",
       "eleves": [
         "jjj"
       ],
-      "timestamp": "2025-08-15T08:29:16.962814"
-    },
-    {
-      "contenu": "bdjdhdisisvdvdjdvdjdjdvdhdvdvdhd jururhrhrjrj",
-      "eleves": [
-        "jjj"
-      ],
-      "timestamp": "2025-08-15T08:39:18.320338"
+      "timestamp": "2025-08-15T09:38:31.686931"
     }
   ]
 }

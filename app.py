@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 import json
 import os
@@ -16,22 +16,25 @@ verrou = Lock()
 BOT_TOKEN = "8251629643:AAH1K4X-bjNQUOk_ym5p4BLVWLh3Ad6NF8M"
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-# 🔹 Initialisation Firebase
+# 🔹 INITIALISATION FIREBASE
 cred_info = json.loads(os.environ["FIREBASE_CREDENTIALS"])
 cred = credentials.Certificate(cred_info)
 firebase_admin.initialize_app(cred, {
-    "databaseURL": os.environ.get("FIREBASE_URL", "")
+    "databaseURL": os.environ.get("FIREBASE_URL", "https://mon-serveur-flask-default-rtdb.firebaseio.com/")
 })
 
-# Références Firebase
+# 🔹 Références "fichiers" sur Firebase
 eleves_ref = db.reference("eleves")
 messages_ref = db.reference("messages")
 ecoles_ref = db.reference("ecoles")
-parents_ref = db.reference("parents")
+parents_ref = db.reference("parents")  # stocke les telegram_id parents
 
+# 🔹 Fonctions pour lire/écrire sur Firebase
 def charger_json(ref):
     data = ref.get()
-    return data if data else {}
+    if not data:
+        return {}
+    return data
 
 def sauvegarder_json(ref, data):
     ref.set(data)
@@ -44,7 +47,11 @@ def set_telegram_webhook():
     except Exception as e:
         print("Erreur setWebhook Telegram:", e)
 
-def envoyer_message_telegram(chat_id, texte):
+# 🔹 Envoi Telegram formaté
+def envoyer_message_telegram(chat_id, titre, message):
+    # titre : string en gras et rouge
+    # message : texte normal
+    texte = f"<b><span style='color:red'>{titre}</span></b>\n{message}"
     try:
         requests.post(f"{TELEGRAM_API_URL}/sendMessage", json={
             "chat_id": chat_id,
@@ -54,14 +61,101 @@ def envoyer_message_telegram(chat_id, texte):
     except Exception as e:
         print(f"Erreur envoi Telegram à {chat_id}: {e}")
 
+# 🔹 ENDPOINTS
 @app.route("/exporter_jsons", methods=["GET"])
 def exporter_jsons():
-    return jsonify({
+    data = {
         "eleves": charger_json(eleves_ref),
         "messages": charger_json(messages_ref),
         "ecoles": charger_json(ecoles_ref),
         "telegram_ids": charger_json(parents_ref)
-    })
+    }
+    return jsonify(data)
+
+@app.route("/verifier_ecole", methods=["POST"])
+def verifier_ecole():
+    data = request.get_json()
+    ecole_id = data.get("id")
+    ecoles = charger_json(ecoles_ref)
+    if ecole_id in ecoles:
+        return jsonify({"success": True, "nom": ecoles[ecole_id]})
+    return jsonify({"success": False})
+
+@app.route("/ajouter_eleve", methods=["POST"])
+def ajouter_eleve():
+    data = request.get_json()
+    ecole_id = data["ecole_id"]
+    eleve_id = data["eleve_id"]
+    nom = data["nom"]
+    with verrou:
+        eleves = charger_json(eleves_ref)
+        if ecole_id not in eleves:
+            eleves[ecole_id] = {}
+        telegram_id = eleves[ecole_id].get(eleve_id, {}).get("telegram_id")
+        eleves[ecole_id][eleve_id] = {
+            "nom": nom,
+            "telegram_id": telegram_id
+        }
+        sauvegarder_json(eleves_ref, eleves)
+    return jsonify({"success": True})
+
+@app.route("/liste_eleves", methods=["POST"])
+def liste_eleves():
+    data = request.get_json()
+    ecole_id = data.get("ecole_id")
+    eleves = charger_json(eleves_ref)
+    if ecole_id not in eleves:
+        return jsonify({})
+    corrected = {}
+    for eid, val in eleves[ecole_id].items():
+        if isinstance(val, str):
+            corrected[eid] = {"nom": val, "telegram_id": None}
+        else:
+            corrected[eid] = val
+    if corrected != eleves[ecole_id]:
+        eleves[ecole_id] = corrected
+        with verrou:
+            sauvegarder_json(eleves_ref, eleves)
+    return jsonify(corrected)
+
+@app.route("/supprimer_eleve", methods=["POST"])
+def supprimer_eleve():
+    data = request.get_json()
+    ecole_id = data["ecole_id"]
+    eleve_id = data["eleve_id"]
+    with verrou:
+        eleves = charger_json(eleves_ref)
+        if ecole_id in eleves and eleve_id in eleves[ecole_id]:
+            del eleves[ecole_id][eleve_id]
+            sauvegarder_json(eleves_ref, eleves)
+    return jsonify({"success": True})
+
+@app.route("/supprimer_message", methods=["POST"])
+def supprimer_message():
+    data = request.get_json()
+    ecole_id = data.get("ecole_id")
+    timestamp = data.get("timestamp")
+    if not ecole_id or not timestamp:
+        return jsonify({"success": False, "error": "Paramètres manquants"}), 400
+    with verrou:
+        messages = charger_json(messages_ref)
+        if ecole_id in messages:
+            avant = len(messages[ecole_id])
+            messages[ecole_id] = [m for m in messages[ecole_id] if m.get("timestamp") != timestamp]
+            sauvegarder_json(messages_ref, messages)
+            if len(messages[ecole_id]) == avant - 1:
+                return jsonify({"success": True})
+            else:
+                return jsonify({"success": False, "error": "Message non trouvé"}), 404
+        return jsonify({"success": False, "error": "École non trouvée"}), 404
+
+@app.route("/eleves.json")
+def get_eleves():
+    return jsonify(charger_json(eleves_ref))
+
+@app.route("/messages.json")
+def get_messages():
+    return jsonify(charger_json(messages_ref))
 
 @socketio.on("envoyer_message")
 def envoyer_message(data):
@@ -69,8 +163,6 @@ def envoyer_message(data):
     eleves = data["eleves"]
     message = data["message"]
     timestamp = datetime.now().isoformat()
-
-    # Sauvegarde dans Firebase
     with verrou:
         messages = charger_json(messages_ref)
         if ecole_id not in messages:
@@ -92,23 +184,27 @@ def envoyer_message(data):
         }
     }, broadcast=True)
 
-    # Envoi Telegram
     parents = charger_json(parents_ref)
     eleves_data = charger_json(eleves_ref)
+    ecoles_data = charger_json(ecoles_ref)
     for eleve_id in eleves:
         eleve_info = None
+        nom_ecole = ""
         for ec_id, e_dict in eleves_data.items():
             if eleve_id in e_dict:
                 if isinstance(e_dict[eleve_id], str):
                     e_dict[eleve_id] = {"nom": e_dict[eleve_id], "telegram_id": None}
                 eleve_info = e_dict[eleve_id]
+                nom_ecole = ecoles_data.get(ec_id, ec_id)
                 break
         if eleve_info and eleve_info.get("telegram_id"):
-            titre = f"📢 <b>Message pour {eleve_info['nom']}</b>\n\n"
-            envoyer_message_telegram(eleve_info["telegram_id"], titre + message)
+            envoyer_message_telegram(eleve_info["telegram_id"],
+                                      f"Message pour {eleve_info['nom']}",
+                                      message)
         if eleve_id in parents and parents[eleve_id]:
-            titre = f"📢 <b>Message pour votre enfant {eleve_info['nom']}</b>\n\n"
-            envoyer_message_telegram(parents[eleve_id], titre + message)
+            envoyer_message_telegram(parents[eleve_id],
+                                      f"(Parent) Message pour votre enfant {eleve_info['nom']}",
+                                      message)
 
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
@@ -120,12 +216,11 @@ def telegram_webhook():
         eleves = charger_json(eleves_ref)
         parents = charger_json(parents_ref)
         messages = charger_json(messages_ref)
-        ecoles = charger_json(ecoles_ref)
+        ecoles_data = charger_json(ecoles_ref)
         trouve = False
 
         for ecole_id, eleves_ecole in eleves.items():
             if texte in eleves_ecole:
-                # Sauvegarde telegram_id
                 if isinstance(eleves_ecole[texte], str):
                     eleves_ecole[texte] = {"nom": eleves_ecole[texte], "telegram_id": chat_id}
                 else:
@@ -133,23 +228,26 @@ def telegram_webhook():
                 sauvegarder_json(eleves_ref, eleves)
                 parents[texte] = chat_id
                 sauvegarder_json(parents_ref, parents)
-
-                nom_ecole = ecoles.get(ecole_id, "École inconnue")
-                confirmation = f"✅ <b>Élève trouvé :</b> {eleves_ecole[texte]['nom']} ({nom_ecole})"
-                envoyer_message_telegram(chat_id, confirmation)
-
-                # Envoi des anciens messages
+                nom_ecole = ecoles_data.get(ecole_id, ecole_id)
+                envoyer_message_telegram(chat_id,
+                                          f"✅ Élève trouvé : {eleves_ecole[texte]['nom']} ({nom_ecole})",
+                                          "")
+                msgs_a_envoyer = []
                 if ecole_id in messages:
-                    msgs_a_envoyer = [m for m in messages[ecole_id] if texte in m["eleves"]]
-                    messages[ecole_id] = [m for m in messages[ecole_id] if texte not in m["eleves"]]
-                    sauvegarder_json(messages_ref, messages)
-                    for m in msgs_a_envoyer:
-                        titre = f"📢 <b>Message pour {eleves_ecole[texte]['nom']}</b>\n\n"
-                        envoyer_message_telegram(chat_id, titre + m["contenu"])
+                    for m in messages[ecole_id]:
+                        if texte in m["eleves"]:
+                            msgs_a_envoyer.append(m)
+                    if msgs_a_envoyer:
+                        messages[ecole_id] = [m for m in messages[ecole_id] if texte not in m["eleves"]]
+                        sauvegarder_json(messages_ref, messages)
+                for m in msgs_a_envoyer:
+                    envoyer_message_telegram(chat_id,
+                                              f"Message pour {eleves_ecole[texte]['nom']}",
+                                              m["contenu"])
                 trouve = True
                 break
         if not trouve:
-            envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.")
+            envoyer_message_telegram(chat_id, "❌ Aucun élève trouvé avec cet ID.", "")
 
     return jsonify({"ok": True})
 
