@@ -169,8 +169,8 @@ def envoyer_message(data):
     eleves_data = charger_json(eleves_ref)
     ecoles_data = charger_json(ecoles_ref)
 
-    # Correction : chaque parent sélectionné reçoit son message, mais sans doublon pour un même chat_id
-    parents_envoyes = set()
+    # 🔥 Correction : chaque parent reçoit le message pour chaque élève sélectionné (jamais en double pour le même élève)
+    deja_envoye = set()
     for eleve_id in eleves:
         eleve_info = None
         nom_ecole = ""
@@ -183,17 +183,17 @@ def envoyer_message(data):
                 break
         if eleve_info:
             texte = f"<b>Message pour {eleve_info['nom']}</b>\n\n{message}"
-            # On envoie à chaque parent associé à cet élève, mais un seul message par chat_id unique
-            ids_possibles = set()
+            chat_ids = set()
             if eleve_info.get("telegram_id"):
-                ids_possibles.add(str(eleve_info["telegram_id"]))
+                chat_ids.add(str(eleve_info["telegram_id"]))
             if eleve_id in parents and parents[eleve_id]:
-                ids_possibles.add(str(parents[eleve_id]))
-            # Envoyer à chaque chat_id unique non déjà envoyé pour ce message
-            for pid in ids_possibles:
-                if pid and pid not in parents_envoyes:
+                chat_ids.add(str(parents[eleve_id]))
+            # Pour chaque élève, on envoie à chaque parent unique du tableau, mais jamais deux fois pour ce élève
+            for pid in chat_ids:
+                identifiant = f"{pid}-{eleve_id}"
+                if pid and identifiant not in deja_envoye:
                     envoyer_message_telegram(pid, texte)
-                    parents_envoyes.add(pid)
+                    deja_envoye.add(identifiant)
 
 def trouver_eleve_par_id(texte, eleves):
     texte = texte.strip()
